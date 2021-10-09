@@ -141,7 +141,3 @@ def test_parse_fail_note_name(string):
 def test_parse_fail_pitch(string):
     with pytest.raises(ValueError):
         Pitch.from_string(string)
-
-
-def test_poop():
-    assert False
