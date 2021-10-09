@@ -137,7 +137,7 @@ def test_parse_fail_note_name(string):
         NoteName.from_string(string)
 
 
-@pytest.mark.parametrize("string", ("aasdf", "X4", "XX", "CC4", "#"))
+@pytest.mark.parametrize("string", ("aasdf", "X4", "XX", "CC4", "#", "aspdf9uh2"))
 def test_parse_fail_pitch(string):
     with pytest.raises(ValueError):
         Pitch.from_string(string)
