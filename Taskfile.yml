@@ -4,7 +4,7 @@ dotenv:
 
 tasks:
   midi: open test.midi
-  test: poetry run pytest -vvv --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 99
+  test: poetry run pytest -vvv --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 90
   fmt:
     cmds:
       - task: isort

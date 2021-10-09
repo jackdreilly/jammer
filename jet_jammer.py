@@ -299,9 +299,10 @@ class ChordProgression:
             yield self.scale.seventh(chord_number).pitched(self.key)
 
 
-def make_midi(chord_progression: ChordProgression, fn: BinaryIO):
+def make_midi(
+    *, chord_progression: ChordProgression, tempo: int = 120, file_object: BinaryIO
+):
     midi_file = MIDIFile(3)
-    tempo = 150
     track = 0  # the only track
     time = 0  # start at the beginning
     midi_file.addTrackName(0, time, "Piano")
@@ -352,7 +353,7 @@ def make_midi(chord_progression: ChordProgression, fn: BinaryIO):
                     100,
                 )
 
-    midi_file.writeFile(fn)
+    midi_file.writeFile(file_object)
 
 
 app = fastapi.FastAPI()
@@ -381,15 +382,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+Tempo = conint(ge=60, le=300)
+
 
 @app.get("/", response_class=FileResponse)
 def get_midi(
     chord_numbers: List[ChordNumber] = Query([1, 6, 2, 5]),
     key: constr(regex=Pitch.regex.pattern) = Query("C"),
+    tempo: Tempo = 150,
     temp_file=Depends(create_temp_file),
 ):
     file_object, path = temp_file
     make_midi(
-        ChordProgression(chord_numbers, Pitch.from_string(key), major), file_object
+        chord_progression=ChordProgression(
+            chord_numbers, Pitch.from_string(key), major
+        ),
+        tempo=tempo,
+        file_object=file_object,
     )
     return FileResponse(path, filename="jammer.midi")
