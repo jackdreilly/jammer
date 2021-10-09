@@ -25,3 +25,4 @@ tasks:
     cmds:
       - task: fmt
       - task: lint
+  serve: docker-compose up --remove-orphans --build

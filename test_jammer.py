@@ -125,10 +125,8 @@ def test_note_name_a_offset(offset: int):
 
 
 def test_midi():
-    make_midi(
-        ChordProgression([*range(1, 9), *range(8, 0, -1)]),
-        Path(__file__).parent / "test.midi",
-    )
+    with open(Path(__file__).parent / "test.midi", "wb") as fn:
+        make_midi(ChordProgression([*range(1, 9), *range(8, 0, -1)]), fn)
 
 
 @pytest.mark.parametrize("string", ("aasdf", "X", "XX", "CC", "#"))

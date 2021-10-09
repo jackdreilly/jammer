@@ -2,13 +2,21 @@
 from __future__ import annotations
 
 import itertools
+import os
+import pathlib
 import re
+import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum, auto, unique
-from pathlib import Path
-from typing import Generator, Iterable, List
+from typing import BinaryIO, Generator, Iterable, List, Literal, Tuple
 
+import fastapi
+from fastapi.middleware.cors import CORSMiddleware
+import pydantic
+from fastapi.params import Depends, Query
 from midiutil.MidiFile import MIDIFile
+from pydantic.types import conint, constr
+from fastapi.responses import FileResponse
 
 
 @unique
@@ -179,9 +187,11 @@ class Pitch:
     _A4_MIDI_INTERVAL = 57
     _A4_OCTAVE = 4
 
+    regex = re.compile(NoteName.regex[:-1] + r"(?P<octave>\d?)$")
+
     @classmethod
     def from_string(cls, pitch_string: str) -> Pitch:
-        match = re.match(NoteName.regex[:-1] + r"(?P<octave>\d?)$", pitch_string)
+        match = cls.regex.match(pitch_string)
         if not match:
             raise ValueError(f'"{pitch_string}" not a Pitch')
         return cls.from_note(
@@ -274,10 +284,12 @@ class KeyChord:
 
 major = Scale.make(2, 4, 5, 7, 9, 11)
 
+ChordNumber = conint(ge=1, le=7)
+
 
 @dataclass(frozen=True)
 class ChordProgression:
-    chord_numbers: List[int]
+    chord_numbers: List[ChordNumber]
     key: Pitch = Pitch.from_string("c")
     scale: Scale = major
 
@@ -287,7 +299,7 @@ class ChordProgression:
             yield self.scale.seventh(chord_number).pitched(self.key)
 
 
-def make_midi(chord_progression: ChordProgression, file: Path):
+def make_midi(chord_progression: ChordProgression, fn: BinaryIO):
     midi_file = MIDIFile(3)
     tempo = 150
     track = 0  # the only track
@@ -340,6 +352,44 @@ def make_midi(chord_progression: ChordProgression, file: Path):
                     100,
                 )
 
-    # write it to disk
-    with open(file, "wb") as outf:
-        midi_file.writeFile(outf)
+    midi_file.writeFile(fn)
+
+
+app = fastapi.FastAPI()
+
+
+class ChordProgressionModel(pydantic.BaseModel):
+    chord_numbers: List[ChordNumber]
+    key: constr(regex=Pitch.regex.pattern)
+    scale: Literal["major"] = "major"
+
+
+def create_temp_file():
+    file_descriptor, path = tempfile.mkstemp(suffix=".midi")
+    try:
+        with os.fdopen(file_descriptor, "wb") as file_object:
+            yield file_object, path
+    finally:
+        os.unlink(path)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=".*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/", response_class=FileResponse)
+def get_midi(
+    chord_numbers: List[ChordNumber] = Query([1, 6, 2, 5]),
+    key: constr(regex=Pitch.regex.pattern) = Query("C"),
+    temp_file=Depends(create_temp_file),
+):
+    file_object, path = temp_file
+    make_midi(
+        ChordProgression(chord_numbers, Pitch.from_string(key), major), file_object
+    )
+    return FileResponse(path, filename="jammer.midi")
