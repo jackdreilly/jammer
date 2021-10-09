@@ -132,3 +132,4 @@ dmypy.json
 
 report_unit.xml
 .cov_html/
+.env
