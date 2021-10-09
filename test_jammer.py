@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from jammer import (
+from jet_jammer import (
     Accidental,
     Chord,
     ChordProgression,

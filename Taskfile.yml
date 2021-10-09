@@ -3,6 +3,7 @@ dotenv:
   - .env
 
 tasks:
+  test: poetry run pytest -vvv --cov ./ --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html
   fmt:
     cmds:
       - task: isort
