@@ -24,7 +24,7 @@ jobs:
       - name: Black
         run: poetry run black --check .
       - name: Pytest
-        run: poetry run pytest -vvv --cov ./ --cov-report=xml --junit-xml report_unit.xml
+        run: poetry run pytest -vvv --cov ./ --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html
       - name: "Upload coverage to Codecov"
         uses: codecov/codecov-action@v2
         with:
@@ -34,3 +34,13 @@ jobs:
         if: always()
         with:
           report_paths: "report_unit.xml"
+      - name: Archive midi
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-midi
+          path: test.midi
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v2
+        with:
+          name: code-coverage-report
+          path: .cov_html
