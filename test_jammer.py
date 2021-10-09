@@ -1,7 +1,9 @@
 import itertools
-from pathlib import Path
-import pytest
 import subprocess
+from pathlib import Path
+
+import pytest
+
 from jammer import (
     Accidental,
     Chord,
@@ -92,7 +94,7 @@ def test_note_name_from_string(string: str, note_name: NoteName):
     ("string", "pitch_midi_interval"),
     (("A4", 57), ("C4", 60), ("C", 60), ("C#4", 61), ("C#", 61), ("Cb", 59)),
 )
-def test_note_name_from_string(string: str, pitch_midi_interval: int):
+def test_pitch_from_string(string: str, pitch_midi_interval: int):
     assert Pitch.from_string(string) == Pitch(pitch_midi_interval)
 
 

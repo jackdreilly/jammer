@@ -1,3 +1,4 @@
+"""Jammer tool"""
 from __future__ import annotations
 
 import itertools
@@ -12,11 +13,15 @@ from midiutil.MidiFile import MIDIFile
 
 @unique
 class AutoEnum(str, Enum):
-    def _generate_next_value_(name: str, *args, **kwargs):
-        return name
+    """Generates enum value from enum name"""
+
+    def _generate_next_value_(self: str, *_, **__):
+        return self
 
 
 class Letter(AutoEnum):
+    """Musical letter"""
+
     A = auto()
     B = auto()
     C = auto()
@@ -27,31 +32,39 @@ class Letter(AutoEnum):
 
     @property
     def has_sharp(self) -> bool:
+        """Has sharp black key"""
         return self not in {self.B, self.E}
 
     @property
     def has_flat(self) -> bool:
+        """Has flat black key"""
         return (self - 1).has_sharp
 
     def __add__(self, i: int) -> Letter:
+        """Increments letter"""
         letter_list = list(Letter)
         return letter_list[(letter_list.index(self) + i) % len(letter_list)]
 
     def __sub__(self, i: int) -> Letter:
+        """Decrements letter"""
         return self + (-i)
 
     @classmethod
     def from_string(cls, string: str) -> Letter:
+        """Parses letter from string"""
         return cls(string.upper())
 
 
 class Accidental(AutoEnum):
+    """Musical accidental"""
+
     flat = "♭"
     natural = "♮"
     sharp = "♯"
 
     @classmethod
     def from_string(cls, string: str) -> Accidental:
+        """Parses accidental from string, supporting easy aliases"""
         return cls(
             {"b": cls.flat, "n": cls.natural, "#": cls.sharp, "": cls.natural}.get(
                 string, string
@@ -193,11 +206,15 @@ class Scale:
         return cls(sorted({0, *intervals}))
 
     def triad(self, number: int) -> Chord:
-        n = len(self.intervals)
-        start_index = (number % n) - 1
+        interval_length = len(self.intervals)
+        start_index = (number % interval_length) - 1
         root = self.intervals[start_index]
         return Chord(
-            root, [self.intervals[(i * 2 + start_index) % n] for i in range(1, 3)]
+            root,
+            [
+                self.intervals[(i * 2 + start_index) % interval_length]
+                for i in range(1, 3)
+            ],
         )
 
 
