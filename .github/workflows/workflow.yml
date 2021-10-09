@@ -46,3 +46,5 @@ jobs:
         with:
           name: code-coverage-report
           path: .cov_html
+      - name: Publish
+        run: poetry publish --build
