@@ -126,7 +126,7 @@ def test_note_name_a_offset(offset: int):
 
 def test_midi():
     make_midi(
-        ChordProgression([1, 6, 2, 5]),
+        ChordProgression([*range(1, 9), *range(8, 0, -1)]),
         Path(__file__).parent / "test.midi",
     )
 

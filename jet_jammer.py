@@ -19,6 +19,23 @@ class AutoEnum(str, Enum):
         return self
 
 
+@dataclass(frozen=True)
+class Octave:
+    count: int = 1
+
+    def __mul__(self, i: int):
+        return Octave(self.count * i)
+
+    def __rmul__(self, i: int):
+        return self * i
+
+    def __int__(self) -> int:
+        return self.count * 12
+
+
+OCTAVE = Octave()
+
+
 class Letter(AutoEnum):
     """Musical letter"""
 
@@ -178,7 +195,10 @@ class Pitch:
         )
 
     def __add__(self, interval: int) -> Pitch:
-        return Pitch(self.midi_interval + interval)
+        return Pitch(self.midi_interval + int(interval))
+
+    def __sub__(self, interval: int) -> Pitch:
+        return self + (-1 * interval)
 
     @classmethod
     def from_note(cls, note_name: NoteName, octave: int) -> Pitch:
@@ -217,6 +237,18 @@ class Scale:
             ],
         )
 
+    def seventh(self, number: int) -> Chord:
+        interval_length = len(self.intervals)
+        start_index = (number % interval_length) - 1
+        root = self.intervals[start_index]
+        return Chord(
+            root,
+            [
+                self.intervals[(i * 2 + start_index) % interval_length]
+                for i in range(1, 4)
+            ],
+        )
+
 
 @dataclass(frozen=True)
 class KeyScale:
@@ -252,25 +284,61 @@ class ChordProgression:
     @property
     def chords(self) -> Iterable[KeyChord]:
         for chord_number in self.chord_numbers:
-            yield self.scale.triad(chord_number).pitched(self.key)
+            yield self.scale.seventh(chord_number).pitched(self.key)
 
 
 def make_midi(chord_progression: ChordProgression, file: Path):
-    midi_file = MIDIFile(1)
+    midi_file = MIDIFile(3)
+    tempo = 150
     track = 0  # the only track
     time = 0  # start at the beginning
-    midi_file.addTrackName(track, time, "Sample Track")
-    midi_file.addTempo(track, time, 120)
-    channel = 0
-    volume = 100
-    pitch = 60  # C4 (middle C)
+    midi_file.addTrackName(0, time, "Piano")
+    midi_file.addTempo(0, time, tempo)
+    midi_file.addTrackName(1, time, "Bass")
+    midi_file.addTempo(1, time, tempo)
+    midi_file.addTrackName(2, time, "Drums")
+    midi_file.addTempo(2, time, tempo)
+    midi_file.addProgramChange(0, 0, 0, 0)
+    midi_file.addProgramChange(1, 1, 0, 32)
     time = 0  # start on beat 0
-    duration = 4  # 1 beat long
-    for measure, chord in enumerate(chord_progression.chords):
-        for pitch in chord:
-            midi_file.addNote(
-                track, channel, pitch.midi_interval, measure * 4, duration, volume
-            )
+    for repeat in range(16):
+        time = repeat * 4 * len(list(chord_progression.chords))
+        for measure, chord in enumerate(chord_progression.chords):
+            midi_file.addNote(2, 9, 35, time + measure * 4, 1, 100)
+            midi_file.addNote(2, 9, 35, time + measure * 4 + 2, 1, 100)
+            midi_file.addNote(2, 9, 51, time + measure * 4, 1, 100)
+            midi_file.addNote(2, 9, 51, time + measure * 4 + 1, 1, 100)
+            midi_file.addNote(2, 9, 51, time + measure * 4 + 1 + 2 / 3, 1, 100)
+            midi_file.addNote(2, 9, 51, 2 + time + measure * 4, 1, 100)
+            midi_file.addNote(2, 9, 51, 2 + time + measure * 4 + 1, 1, 100)
+            midi_file.addNote(2, 9, 51, 2 + time + measure * 4 + 1 + 2 / 3, 1, 100)
+            for pitch in chord:
+                midi_file.addNote(
+                    track,
+                    0,
+                    pitch.midi_interval,
+                    time + measure * 4,
+                    4 * 10 / 24,
+                    100,
+                )
+                midi_file.addNote(
+                    track,
+                    0,
+                    pitch.midi_interval,
+                    time + measure * 4 + 4 * 10 / 24,
+                    4 * 1 / 8,
+                    100,
+                )
+            for i, pitch in enumerate(chord):
+                pitch = pitch - 2 * OCTAVE
+                midi_file.addNote(
+                    1,
+                    1,
+                    pitch.midi_interval,
+                    time + measure * 4 + i,
+                    1,
+                    100,
+                )
 
     # write it to disk
     with open(file, "wb") as outf:

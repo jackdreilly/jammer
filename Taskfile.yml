@@ -3,7 +3,8 @@ dotenv:
   - .env
 
 tasks:
-  test: poetry run pytest -vvv --cov ./ --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html
+  midi: open test.midi
+  test: poetry run pytest -vvv --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 99
   fmt:
     cmds:
       - task: isort
