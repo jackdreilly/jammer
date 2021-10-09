@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 
 .DS_Store
+
+report_unit.xml
+.cov_html/
