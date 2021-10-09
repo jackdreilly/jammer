@@ -12,6 +12,8 @@ MIDIUtil = "^1.2.1"
 pytest = "^6.2.5"
 black = {version = "^21.9b0", allow-prereleases = true}
 pytest-cov = {version = "^3.0.0", allow-prereleases = true}
+isort = "^5.9.3"
+autoflake = "^1.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

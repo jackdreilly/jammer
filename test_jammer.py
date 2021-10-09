@@ -1,5 +1,4 @@
 import itertools
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -126,12 +125,10 @@ def test_note_name_a_offset(offset: int):
 
 
 def test_midi():
-    path = Path.home() / "Desktop" / "jack.midi"
     make_midi(
         ChordProgression([1, 6, 2, 5]),
-        path,
+        Path(__file__).parent / "test.midi",
     )
-    # subprocess.run(["open", str(path)])
 
 
 @pytest.mark.parametrize("string", ("aasdf", "X", "XX", "CC", "#"))

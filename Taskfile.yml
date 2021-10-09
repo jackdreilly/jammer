@@ -1,0 +1,23 @@
+version: "3"
+
+tasks:
+  fmt:
+    cmds:
+      - task: isort
+      - task: autoflake
+      - task: black
+  isort: poetry run isort .
+  autoflake: poetry run autoflake --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables .
+  black: poetry run black .
+  isort-lint: poetry run isort --check .
+  autoflake-lint: poetry run autoflake --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables --check .
+  black-lint: poetry run black --check .
+  lint:
+    cmds:
+      # - task: isort-lint
+      - task: autoflake-lint
+      - task: black-lint
+  flint:
+    cmds:
+      - task: fmt
+      - task: lint
