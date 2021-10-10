@@ -160,8 +160,7 @@ def test_golden(golden):
 def test_midi():
     with open(Path(__file__).parent / "test.midi", "wb") as fn:
         make_midi(
-            chord_progression=ChordProgression([1]),
-            # chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
+            chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
             file_object=fn,
         )
 
