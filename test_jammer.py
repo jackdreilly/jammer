@@ -176,6 +176,14 @@ def test_parse_fail_pitch(string):
 
 
 def test_fast_api():
+    with io.BytesIO() as file_object:
+        make_midi(
+            chord_progression=ChordProgression([1, 3], Pitch.from_string("D#")),
+            file_object=file_object,
+            tempo=195,
+        )
+        in_memory_content = file_object.getvalue()
+        assert in_memory_content
     response = TestClient(app).get(
         "/",
         params=[
@@ -185,20 +193,13 @@ def test_fast_api():
             ["tempo", 195],
         ],
     )
-    assert response.content
     assert response.headers == dict_has(
         **{
             "content-type": "audio/midi",
             "content-disposition": 'attachment; filename="jammer.midi"',
         }
     )
-    with io.BytesIO() as file_object:
-        make_midi(
-            chord_progression=ChordProgression([1, 3], Pitch.from_string("D#")),
-            file_object=file_object,
-            tempo=195,
-        )
-        assert response.content in file_object.getvalue()
+    assert response.content == in_memory_content
 
 
 def test_sequence():

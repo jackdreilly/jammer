@@ -657,7 +657,8 @@ def get_midi(
         chord_progression=ChordProgression(
             chord_numbers, Pitch.from_string(key), major
         ),
-        tempo=tempo,
         file_object=file_object,
+        tempo=tempo,
     )
+    file_object.flush()
     return FileResponse(path, filename="jammer.midi")
