@@ -28,3 +28,4 @@ tasks:
   serve: docker-compose up --remove-orphans --build
   cov: open .cov_html/index.html
   deploy: gcloud run deploy --source .
+  serve-local: poetry run uvicorn jet_jammer:app --reload
