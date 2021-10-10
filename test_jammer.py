@@ -142,6 +142,16 @@ def test_note_name_a_offset(offset: int):
     assert NoteName.from_a_offset(offset) == list(NoteName.iterator())[offset]
 
 
+@pytest.mark.golden_test("goldens/*.yml")
+def test_golden(golden):
+    with io.BytesIO() as file_object:
+        make_midi(
+            chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
+            file_object=file_object,
+        )
+        assert file_object.getvalue() == golden.out["output"]
+
+
 def test_midi():
     with open(Path(__file__).parent / "test.midi", "wb") as fn:
         make_midi(

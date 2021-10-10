@@ -1,11 +1,12 @@
 """Jammer tool"""
 from __future__ import annotations
 
+import io
 import itertools
 import os
 import re
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum, auto, unique
 from typing import BinaryIO, Generator, Iterable, List, Literal
 
@@ -298,59 +299,179 @@ class ChordProgression:
             yield self.scale.seventh(chord_number).pitched(self.key)
 
 
+class MidiInstrument(Enum):
+    """Midi program number for instrument"""
+
+    piano = 0
+    bass = 32
+
+
+class MidiDrum(Enum):
+    """Midi pitch number for drum sounds"""
+
+    bass = 35
+    ride = 51
+
+    @property
+    def chord(self) -> List[Pitch]:
+        return [Pitch(self.value)]
+
+
+class MidiChannel(Enum):
+    """Midi channel number for special instruments"""
+
+    drum = 9
+
+
+@dataclass(frozen=True)
+class MidiChord:
+    """A single chord (or note) played on a MidiTrack"""
+
+    duration: float
+    pitches: List[Pitch]
+    volume: int = None
+
+    def at(self, time: float) -> MidiChordTimed:
+        return MidiChordTimed(self, time)
+
+
+@dataclass(frozen=True)
+class MidiTrack:
+    """Baseline information for Midi Track"""
+
+    name: str
+    volume: int = 100
+    channel: int = None
+    instrument: MidiInstrument = None
+
+
+@dataclass(frozen=True)
+class MidiTrackPlay:
+    midi_track: MidiTrack
+    midi_chords: List[MidiChordTimed]
+
+
+@dataclass(frozen=True)
+class MidiChordTimed:
+    midi_chord: MidiChord
+    time: float
+
+
+class Drummer:
+    def bass(self, duration: float = 1) -> MidiChord:
+        return MidiChord(duration, MidiDrum.bass.chord)
+
+    def ride(self, duration: float = 1) -> MidiChord:
+        return MidiChord(duration, MidiDrum.ride.chord)
+
+
+drummer = Drummer()
+
+
+@dataclass
+class MidiTrackPlayBuilder:
+    midi_track: MidiTrack
+    midi_chords: List[MidiChordTimed] = field(default_factory=list)
+    time: float = 0
+    measure_duration: int = 4
+
+    @property
+    def measure(self) -> int:
+        return self.time // self.measure_duration
+
+    @measure.setter
+    def measure(self, measure: int) -> int:
+        self.time = measure * self.measure_duration
+
+    def __lshift__(self, chord: MidiChord) -> MidiTrackPlayBuilder:
+        self.midi_chords.append(chord.at(self.time))
+        return self
+
+    def __rshift__(self, chord: MidiChord) -> MidiTrackPlayBuilder:
+        self <<= chord
+        self.time += chord.duration
+        return self
+
+    def __add__(self, rest_duration: float) -> MidiTrackPlayBuilder:
+        self.time += rest_duration
+        return self
+
+    @property
+    def compiled(self) -> MidiTrackPlay:
+        return MidiTrackPlay(self.midi_track, list(self.midi_chords))
+
+
+@dataclass(frozen=True)
+class MidiSong:
+    tracks: List[MidiTrackPlay]
+    tempo: Tempo
+
+    def write_to(self, file_object: io.BytesIO):
+        midi_file = MIDIFile(numTracks=3)
+        for track_number, track in enumerate(self.tracks):
+            channel = track.midi_track.channel
+            if channel is None:
+                channel = track_number
+            midi_file.addTrackName(
+                track=track_number,
+                time=0,
+                trackName=track.midi_track.name,
+            )
+            midi_file.addTempo(
+                track=track_number,
+                time=0,
+                tempo=self.tempo,
+            )
+            if program := track.midi_track.instrument:
+                midi_file.addProgramChange(
+                    tracknum=track_number,
+                    channel=channel,
+                    time=0,
+                    program=program.value,
+                )
+            for chord in track.midi_chords:
+                for pitch in chord.midi_chord.pitches:
+                    midi_file.addNote(
+                        track=track_number,
+                        channel=channel,
+                        pitch=pitch.midi_interval,
+                        time=chord.time,
+                        duration=chord.midi_chord.duration,
+                        volume=chord.midi_chord.volume or track.midi_track.volume,
+                    )
+        midi_file.writeFile(fileHandle=file_object)
+
+
 def make_midi(
     *, chord_progression: ChordProgression, tempo: int = 120, file_object: BinaryIO
 ):
-    midi_file = MIDIFile(3)
-    midi_file.addTrackName(0, 0, "Piano")
-    midi_file.addTempo(0, 0, tempo)
-    midi_file.addTrackName(1, 0, "Bass")
-    midi_file.addTempo(1, 0, tempo)
-    midi_file.addTrackName(2, 0, "Drums")
-    midi_file.addTempo(2, 0, tempo)
-    midi_file.addProgramChange(0, 0, 0, 0)
-    midi_file.addProgramChange(1, 1, 0, 32)
-    time = 0
-    for repeat in range(16):
-        time = repeat * 4 * len(list(chord_progression.chords))
-        for measure, chord in enumerate(chord_progression.chords):
-            midi_file.addNote(2, 9, 35, time + measure * 4, 1, 100)
-            midi_file.addNote(2, 9, 35, time + measure * 4 + 2, 1, 100)
-            midi_file.addNote(2, 9, 51, time + measure * 4, 1, 100)
-            midi_file.addNote(2, 9, 51, time + measure * 4 + 1, 1, 100)
-            midi_file.addNote(2, 9, 51, time + measure * 4 + 1 + 2 / 3, 1, 100)
-            midi_file.addNote(2, 9, 51, 2 + time + measure * 4, 1, 100)
-            midi_file.addNote(2, 9, 51, 2 + time + measure * 4 + 1, 1, 100)
-            midi_file.addNote(2, 9, 51, 2 + time + measure * 4 + 1 + 2 / 3, 1, 100)
-            for pitch in chord:
-                midi_file.addNote(
-                    0,
-                    0,
-                    pitch.midi_interval,
-                    time + measure * 4,
-                    4 * 10 / 24,
-                    100,
-                )
-                midi_file.addNote(
-                    0,
-                    0,
-                    pitch.midi_interval,
-                    time + measure * 4 + 4 * 10 / 24,
-                    4 * 1 / 8,
-                    100,
-                )
-            for i, pitch in enumerate(chord):
-                pitch = pitch - 2 * OCTAVE
-                midi_file.addNote(
-                    1,
-                    1,
-                    pitch.midi_interval,
-                    time + measure * 4 + i,
-                    1,
-                    100,
-                )
+    piano = MidiTrackPlayBuilder(
+        midi_track=MidiTrack(name="Piano", instrument=MidiInstrument.piano)
+    )
+    bass = MidiTrackPlayBuilder(
+        midi_track=MidiTrack(name="Bass", instrument=MidiInstrument.bass)
+    )
+    drums = MidiTrackPlayBuilder(
+        midi_track=MidiTrack(name="Drums", channel=MidiChannel.drum.value)
+    )
+    for _ in range(16):
+        for chord in chord_progression.chords:
+            for _ in range(2):
+                drums <<= drummer.bass()
+                drums >>= drummer.ride()
+                drums >>= drummer.ride(2 / 3)
+                drums >>= drummer.ride(1 / 3)
+            piano >>= MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
+            piano >>= MidiChord(duration=1 / 6, pitches=list(chord.pitches))
+            piano += 1 / 6
+            piano.measure += 1
 
-    midi_file.writeFile(file_object)
+            for pitch in chord:
+                bass >>= MidiChord(duration=1, pitches=[pitch - 2 * OCTAVE])
+
+    MidiSong(
+        tracks=[track.compiled for track in [piano, bass, drums]], tempo=tempo
+    ).write_to(file_object)
 
 
 app = fastapi.FastAPI()
