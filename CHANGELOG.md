@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.2 (2021-10-10)
+### Fix
+* Doc ([`07c061d`](https://github.com/jackdreilly/jammer/commit/07c061d1dd7195dea04cb71c51ebcd29c90862e0))
+
 ## v0.2.1 (2021-10-10)
 ### Fix
 * Doc ([`f7d8fb1`](https://github.com/jackdreilly/jammer/commit/f7d8fb16a227e2ded330a6585565f3aa7677bf81))
