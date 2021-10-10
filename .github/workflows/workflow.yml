@@ -61,5 +61,6 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@main
         with:
           source: "."
+          service: jammer
       # - name: Publish
       #   run: poetry publish --build
