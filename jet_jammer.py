@@ -8,7 +8,7 @@ import re
 import tempfile
 from dataclasses import asdict, dataclass, field
 from enum import Enum, auto, unique
-from typing import BinaryIO, Generator, Iterable, List, Literal
+from typing import BinaryIO, Generator, Iterable, List, Literal, Optional, Union
 
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -313,6 +313,7 @@ class MidiDrum(Enum):
     """Midi pitch number for drum sounds"""
 
     bass = 35
+    snare = 38
     ride = 51
 
     @property
@@ -326,8 +327,52 @@ class MidiChannel(Enum):
     drum = 9
 
 
+class BuildValueMixin:
+    def __mul__(self, repeat: int) -> BuilderValueSequence:
+        return BuilderValueSequence.singleton(self) * repeat
+
+    def __rshift__(self, value) -> BuilderValueSequence:
+        return BuilderValueSequence.singleton(self) >> value
+
+    def __lshift__(self, value) -> BuilderValueSequence:
+        return BuilderValueSequence.singleton(self) << value
+
+
 @dataclass(frozen=True)
-class MidiChord:
+class Measure(BuildValueMixin):
+    count: int = 1
+
+    def __mul__(self, i: int):
+        return Measure(self.count * i)
+
+    def __rmul__(self, i: int):
+        return self * i
+
+    def __int__(self) -> int:
+        return self.count
+
+    def duration(self, time: float, measure_duration: int) -> float:
+        extra = -(time % measure_duration)
+        offset = int(self) * measure_duration
+        return extra + offset
+
+
+@dataclass(frozen=True)
+class Rest(BuildValueMixin):
+    duration: float = 1
+
+    def __mul__(self, i: int):
+        return Measure(self.duration * i)
+
+    def __rmul__(self, i: int):
+        return self * i
+
+    def __int__(self) -> int:
+        return self.duration
+
+
+@dataclass(frozen=True)
+class MidiChord(BuildValueMixin):
     """A single chord (or note) played on a MidiTrack"""
 
     duration: float
@@ -336,6 +381,71 @@ class MidiChord:
 
     def at(self, time: float) -> MidiChordTimed:
         return MidiChordTimed(self, time)
+
+    @classmethod
+    def pitch(cls, note: Pitch, duration: float = 1) -> MidiChord:
+        return cls(duration, [note])
+
+
+BuilderValueType = Union[MidiChord, float, Measure, Rest, "BuilderValueSequence"]
+
+
+@dataclass(frozen=True)
+class BuilderValue:
+    value: BuilderValueType
+
+    def duration(self, time: float, measure_duration: int) -> float:
+        if isinstance(self.value, MidiChord):
+            return self.value.duration
+        if isinstance(self.value, float):
+            return self.value
+        if isinstance(self.value, Rest):
+            return self.value.duration
+        if isinstance(self.value, Measure):
+            return self.value.duration(time, measure_duration)
+
+    @property
+    def chord(self) -> Optional[MidiChord]:
+        if isinstance(self.value, MidiChord):
+            return self.value
+        return None
+
+    @classmethod
+    def make(cls, value: Union[BuilderValue, BuilderValueType]) -> BuilderValue:
+        return value if isinstance(value, BuilderValue) else BuilderValue(value)
+
+
+@dataclass(frozen=True)
+class BuilderValueSequence:
+    sequence: List[BuilderValue]
+
+    def __mul__(self, repeat: int) -> BuilderValueSequence:
+        return BuilderValueSequence([x for _ in range(repeat) for x in self.sequence])
+
+    def __rshift__(self, value: BuilderValueType):
+        return BuilderValueSequence([*self.sequence, BuilderValue.make(value)])
+
+    def __lshift__(self, value: BuilderValueType):
+        value: BuilderValue = BuilderValue.make(value)
+        value = self >> value
+        if isinstance(value.value, MidiChord):
+            if duration := value.duration:
+                return value >> duration
+        return value
+
+    @classmethod
+    def singleton(cls, builder_value: BuilderValue):
+        return cls(
+            [
+                builder_value
+                if isinstance(builder_value, BuilderValue)
+                else BuilderValue(builder_value)
+            ]
+        )
+
+    @classmethod
+    def from_iterable(cls, iterable: Iterable):
+        return cls([BuilderValue.make(x) for x in iterable])
 
 
 @dataclass(frozen=True)
@@ -367,6 +477,9 @@ class Drummer:
     def ride(self, duration: float = 1) -> MidiChord:
         return MidiChord(duration, MidiDrum.ride.chord)
 
+    def snare(self, duration: float = 1) -> MidiChord:
+        return MidiChord(duration, MidiDrum.snare.chord)
+
 
 drummer = Drummer()
 
@@ -386,17 +499,32 @@ class MidiTrackPlayBuilder:
     def measure(self, measure: int) -> int:
         self.time = measure * self.measure_duration
 
-    def __lshift__(self, chord: MidiChord) -> MidiTrackPlayBuilder:
-        self.midi_chords.append(chord.at(self.time))
+    def __lshift__(self, builder_value: BuilderValue) -> MidiTrackPlayBuilder:
+        if isinstance(builder_value, (Iterable, Generator)):
+            builder_value = BuilderValueSequence.from_iterable(builder_value)
+        if isinstance(builder_value, BuilderValueSequence):
+            original_time = self.time
+            for value in builder_value.sequence:
+                self >>= value
+            self.time = original_time
+            return self
+        if chord := BuilderValue.make(builder_value).chord:
+            self.midi_chords.append(chord.at(self.time))
         return self
 
-    def __rshift__(self, chord: MidiChord) -> MidiTrackPlayBuilder:
-        self <<= chord
-        self.time += chord.duration
-        return self
-
-    def __add__(self, rest_duration: float) -> MidiTrackPlayBuilder:
-        self.time += rest_duration
+    def __rshift__(
+        self, builder_value: Union[MidiChord, Measure, float]
+    ) -> MidiTrackPlayBuilder:
+        if isinstance(builder_value, (Iterable, Generator)):
+            builder_value = BuilderValueSequence.from_iterable(builder_value)
+        if isinstance(builder_value, BuilderValueSequence):
+            for value in builder_value.sequence:
+                self >>= value
+            return self
+        builder_value: BuilderValue = BuilderValue.make(builder_value)
+        self <<= builder_value
+        if duration := builder_value.duration(self.time, self.measure_duration):
+            self.time += duration
         return self
 
     @property
@@ -460,20 +588,24 @@ def make_midi(
     drums = MidiTrackPlayBuilder(
         midi_track=MidiTrack(name="Drums", channel=MidiChannel.drum.value)
     )
-    for _ in range(16):
-        for chord in chord_progression.chords:
-            for _ in range(2):
-                drums <<= drummer.bass()
-                drums >>= drummer.ride()
-                drums >>= drummer.ride(2 / 3)
-                drums >>= drummer.ride(1 / 3)
-            piano >>= MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
-            piano >>= MidiChord(duration=1 / 6, pitches=list(chord.pitches))
-            piano += 1 / 6
-            piano.measure += 1
-
-            for pitch in chord:
-                bass >>= MidiChord(duration=1, pitches=[pitch - 2 * OCTAVE])
+    for chord in chord_progression.chords:
+        (
+            drums
+            << (drummer.bass(2) * 2)
+            << ((drummer.ride() >> drummer.ride(2 / 3) >> drummer.ride(1 / 3)) * 2)
+            >> Rest(2)
+            >> (2 / 3)
+            >> drummer.snare()
+            >> drummer.snare(1 / 3)
+        )
+        (
+            piano
+            >> MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
+            >> MidiChord(duration=1 / 6, pitches=list(chord.pitches))
+            >> 1 / 6
+            >> Measure()
+        )
+        (bass >> (MidiChord.pitch(pitch - 2 * OCTAVE) for pitch in chord))
 
     MidiSong(
         tracks=[track.compiled for track in [piano, bass, drums]], tempo=tempo

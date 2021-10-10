@@ -10,9 +10,12 @@ from fastapi.testclient import TestClient
 
 from jet_jammer import (
     Accidental,
+    BuilderValue,
+    BuilderValueSequence,
     Chord,
     ChordProgression,
     Letter,
+    MidiChord,
     NoteName,
     Pitch,
     app,
@@ -196,3 +199,12 @@ def test_fast_api():
             tempo=195,
         )
         assert response.content in file_object.getvalue()
+
+
+def test_sequence():
+    assert MidiChord(1, [Pitch.from_string("C")]) * 2 == BuilderValueSequence(
+        [
+            BuilderValue.make(MidiChord(1, [Pitch.from_string("C")])),
+            BuilderValue.make(MidiChord(1, [Pitch.from_string("C")])),
+        ]
+    )
