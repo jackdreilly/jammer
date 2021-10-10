@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.3 (2021-10-10)
+### Fix
+* Message ([`85d002c`](https://github.com/jackdreilly/jammer/commit/85d002c81305db6844629967ad5d533026ef63f7))
+
 ## v0.2.2 (2021-10-10)
 ### Fix
 * Doc ([`07c061d`](https://github.com/jackdreilly/jammer/commit/07c061d1dd7195dea04cb71c51ebcd29c90862e0))
