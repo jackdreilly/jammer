@@ -16,6 +16,8 @@ from jet_jammer import (
     ChordProgression,
     Letter,
     MidiChord,
+    MidiTrack,
+    MidiTrackPlayBuilder,
     NoteName,
     Pitch,
     app,
@@ -158,7 +160,8 @@ def test_golden(golden):
 def test_midi():
     with open(Path(__file__).parent / "test.midi", "wb") as fn:
         make_midi(
-            chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
+            chord_progression=ChordProgression([1]),
+            # chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
             file_object=fn,
         )
 
@@ -209,3 +212,15 @@ def test_sequence():
             BuilderValue.make(MidiChord(1, [Pitch.from_string("C")])),
         ]
     )
+
+
+def test_builder_measure():
+    builder = MidiTrackPlayBuilder(MidiTrack("a"))
+    assert builder.measure == 0
+    builder.time = 4
+    assert builder.measure == 1
+    builder.time = 5
+    assert builder.measure == 1
+    builder.measure += 1
+    assert builder.measure == 2
+    assert builder.time == 8
