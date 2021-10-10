@@ -1,5 +1,8 @@
 name: CI
-on: [push]
+on:
+  push:
+    branches:
+      - main
 
 jobs:
   ci:
@@ -50,5 +53,13 @@ jobs:
         with:
           name: code-coverage-report
           path: .cov_html
+      - uses: google-github-actions/setup-gcloud@master
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
+      - name: Deploy
+        uses: google-github-actions/deploy-cloudrun@main
+        with:
+          source: "."
       # - name: Publish
       #   run: poetry publish --build
