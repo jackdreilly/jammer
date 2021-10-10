@@ -1,4 +1,4 @@
-"""Jammer tool and server"""
+"""Jammer tool and server, with midi export"""
 from __future__ import annotations
 
 import io
