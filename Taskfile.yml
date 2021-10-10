@@ -27,3 +27,4 @@ tasks:
       - task: lint
   serve: docker-compose up --remove-orphans --build
   cov: open .cov_html/index.html
+  deploy: gcloud run deploy --source .
