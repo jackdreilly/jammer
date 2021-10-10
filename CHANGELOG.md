@@ -2,6 +2,14 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.7 (2021-10-10)
+### Fix
+* Test-midi ([`d48cb7e`](https://github.com/jackdreilly/jammer/commit/d48cb7efb985e133208f67342b0896a0f2ddd1d4))
+* 100% coverage ([`1d39963`](https://github.com/jackdreilly/jammer/commit/1d39963e839729f9cd8a6d5fcfbbfa4eca6aae93))
+* Flush ([`b697500`](https://github.com/jackdreilly/jammer/commit/b6975007f7873f9ddc52bdfa993698b07cedfee3))
+* Len-tracks ([`f2cb9bb`](https://github.com/jackdreilly/jammer/commit/f2cb9bb8fc49a82572cb5e696f13c844c83213c4))
+* Revamp ([`988a2cd`](https://github.com/jackdreilly/jammer/commit/988a2cd4bd40f641b9f4b1693e84d30fd416171e))
+
 ## v0.2.6 (2021-10-10)
 ### Fix
 * Release ([`821cde0`](https://github.com/jackdreilly/jammer/commit/821cde00399b9cd6cba9c21262a351418dcfbdaf))
