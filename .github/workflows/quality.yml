@@ -1,11 +1,12 @@
-name: CI
+name: Quality
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  ci:
+  Quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -53,14 +54,3 @@ jobs:
         with:
           name: code-coverage-report
           path: .cov_html
-      - uses: google-github-actions/setup-gcloud@master
-        with:
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
-          export_default_credentials: true
-      - name: Deploy
-        uses: google-github-actions/deploy-cloudrun@main
-        with:
-          source: "."
-          service: jammer
-      # - name: Publish
-      #   run: poetry publish --build
