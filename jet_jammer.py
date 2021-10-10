@@ -3,20 +3,19 @@ from __future__ import annotations
 
 import itertools
 import os
-import pathlib
 import re
 import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum, auto, unique
-from typing import BinaryIO, Generator, Iterable, List, Literal, Tuple
+from typing import BinaryIO, Generator, Iterable, List, Literal
 
 import fastapi
-from fastapi.middleware.cors import CORSMiddleware
 import pydantic
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends, Query
+from fastapi.responses import FileResponse
 from midiutil.MidiFile import MIDIFile
 from pydantic.types import conint, constr
-from fastapi.responses import FileResponse
 
 
 @unique
@@ -303,17 +302,15 @@ def make_midi(
     *, chord_progression: ChordProgression, tempo: int = 120, file_object: BinaryIO
 ):
     midi_file = MIDIFile(3)
-    track = 0  # the only track
-    time = 0  # start at the beginning
-    midi_file.addTrackName(0, time, "Piano")
-    midi_file.addTempo(0, time, tempo)
-    midi_file.addTrackName(1, time, "Bass")
-    midi_file.addTempo(1, time, tempo)
-    midi_file.addTrackName(2, time, "Drums")
-    midi_file.addTempo(2, time, tempo)
+    midi_file.addTrackName(0, 0, "Piano")
+    midi_file.addTempo(0, 0, tempo)
+    midi_file.addTrackName(1, 0, "Bass")
+    midi_file.addTempo(1, 0, tempo)
+    midi_file.addTrackName(2, 0, "Drums")
+    midi_file.addTempo(2, 0, tempo)
     midi_file.addProgramChange(0, 0, 0, 0)
     midi_file.addProgramChange(1, 1, 0, 32)
-    time = 0  # start on beat 0
+    time = 0
     for repeat in range(16):
         time = repeat * 4 * len(list(chord_progression.chords))
         for measure, chord in enumerate(chord_progression.chords):
@@ -327,7 +324,7 @@ def make_midi(
             midi_file.addNote(2, 9, 51, 2 + time + measure * 4 + 1 + 2 / 3, 1, 100)
             for pitch in chord:
                 midi_file.addNote(
-                    track,
+                    0,
                     0,
                     pitch.midi_interval,
                     time + measure * 4,
@@ -335,7 +332,7 @@ def make_midi(
                     100,
                 )
                 midi_file.addNote(
-                    track,
+                    0,
                     0,
                     pitch.midi_interval,
                     time + measure * 4 + 4 * 10 / 24,

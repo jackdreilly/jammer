@@ -1,7 +1,12 @@
+"""Test cases"""
+import io
 import itertools
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
+from fastapi.testclient import TestClient
 
 from jet_jammer import (
     Accidental,
@@ -10,9 +15,22 @@ from jet_jammer import (
     Letter,
     NoteName,
     Pitch,
+    app,
     major,
     make_midi,
 )
+
+
+@dataclass(frozen=True)
+class DictHas:
+    kwargs: Dict[str, Any]
+
+    def __eq__(self, other: dict) -> bool:
+        return self.kwargs == {k: v for k, v in other.items() if k in self.kwargs}
+
+
+def dict_has(**kwargs):
+    return DictHas(kwargs=kwargs)
 
 
 def test_note_name_iterator():
@@ -142,3 +160,29 @@ def test_parse_fail_note_name(string):
 def test_parse_fail_pitch(string):
     with pytest.raises(ValueError):
         Pitch.from_string(string)
+
+
+def test_fast_api():
+    response = TestClient(app).get(
+        "/",
+        params=[
+            ["chord_numbers", 1],
+            ["chord_numbers", 3],
+            ["key", "D#"],
+            ["tempo", 195],
+        ],
+    )
+    assert response.content
+    assert response.headers == dict_has(
+        **{
+            "content-type": "audio/midi",
+            "content-disposition": 'attachment; filename="jammer.midi"',
+        }
+    )
+    with io.BytesIO() as file_object:
+        make_midi(
+            chord_progression=ChordProgression([1, 3], Pitch.from_string("D#")),
+            file_object=file_object,
+            tempo=195,
+        )
+        assert response.content in file_object.getvalue()

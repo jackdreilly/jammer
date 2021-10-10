@@ -14,12 +14,17 @@ platformdirs = "^2.4.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
-black = {version = "^21.9b0", allow-prereleases = true}
-pytest-cov = {version = "^3.0.0", allow-prereleases = true}
+black = { version = "^21.9b0", allow-prereleases = true }
+pytest-cov = { version = "^3.0.0", allow-prereleases = true }
 isort = "^5.9.3"
 autoflake = "^1.4"
 pylint = "^2.11.1"
+requests = "^2.26.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3

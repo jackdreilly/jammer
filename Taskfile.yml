@@ -4,21 +4,21 @@ dotenv:
 
 tasks:
   midi: open test.midi
-  test: poetry run pytest -vvv --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 90
+  test: poetry run pytest -vvv --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 99
   fmt:
     cmds:
       - task: isort
       - task: autoflake
       - task: black
   isort: poetry run isort .
-  autoflake: poetry run autoflake --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables .
+  autoflake: poetry run autoflake --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables *.py
   black: poetry run black .
-  isort-lint: poetry run isort --check .
-  autoflake-lint: poetry run autoflake --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables --check .
-  black-lint: poetry run black --check .
+  isort-lint: poetry run isort --check -vvv .
+  autoflake-lint: poetry run autoflake -vvv --in-place --remove-duplicate-keys  --remove-all-unused-imports  --expand-star-imports --remove-unused-variables --check *.py
+  black-lint: poetry run black --check -vvv .
   lint:
     cmds:
-      # - task: isort-lint
+      - task: isort-lint
       - task: autoflake-lint
       - task: black-lint
   flint:
