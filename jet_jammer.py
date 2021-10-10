@@ -11,11 +11,12 @@ from enum import Enum, auto, unique
 from typing import BinaryIO, Generator, Iterable, List, Literal
 
 import fastapi
-import pydantic
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.params import Depends, Query
 from fastapi.responses import FileResponse
 from midiutil.MidiFile import MIDIFile
+from pydantic import BaseModel
 from pydantic.types import conint, constr
 
 
@@ -442,6 +443,9 @@ class MidiSong:
         midi_file.writeFile(fileHandle=file_object)
 
 
+Tempo = conint(ge=60, le=300)
+
+
 def make_midi(
     *, chord_progression: ChordProgression, tempo: int = 120, file_object: BinaryIO
 ):
@@ -477,10 +481,13 @@ def make_midi(
 app = fastapi.FastAPI()
 
 
-class ChordProgressionModel(pydantic.BaseModel):
+class ChordProgressionModel(BaseModel):
     chord_numbers: List[ChordNumber]
     key: constr(regex=Pitch.regex.pattern)
     scale: Literal["major"] = "major"
+
+    class Config(BaseModel.Config):
+        extra = "forbid"
 
 
 def create_temp_file():
@@ -500,7 +507,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-Tempo = conint(ge=60, le=300)
+
+app.add_middleware(GZipMiddleware)
 
 
 @app.get("/", response_class=FileResponse)
