@@ -538,7 +538,7 @@ class MidiSong:
     tempo: Tempo
 
     def write_to(self, file_object: io.BytesIO):
-        midi_file = MIDIFile(numTracks=3)
+        midi_file = MIDIFile(numTracks=len(self.tracks))
         for track_number, track in enumerate(self.tracks):
             channel = track.midi_track.channel
             if channel is None:
