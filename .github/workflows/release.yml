@@ -1,4 +1,4 @@
-name: Release
+name: Semantic Release
 on:
   workflow_dispatch:
     inputs:
@@ -6,15 +6,19 @@ on:
         description: "Make a release"
         required: true
         default: "yes"
+
 jobs:
-  Release:
+  release:
     runs-on: ubuntu-latest
+    concurrency: release
+
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
         with:
-          python-version: 3.8
-      - name: Semantic Release
-        run: |
-          pip install python-semantic-release
-          semantic-release publish
+          fetch-depth: 0
+
+      - name: Python Semantic Release
+        uses: relekang/python-semantic-release@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pypi_token: ${{ secrets.PYPI_TOKEN }}
