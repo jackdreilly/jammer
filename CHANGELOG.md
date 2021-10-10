@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.1 (2021-10-10)
+### Fix
+* Doc ([`f7d8fb1`](https://github.com/jackdreilly/jammer/commit/f7d8fb16a227e2ded330a6585565f3aa7677bf81))
+
 ## v0.2.0 (2021-10-10)
 ### Feature
 * Gzip ([`6a680be`](https://github.com/jackdreilly/jammer/commit/6a680bec3520abf53c832bb7e3df89d59b024d82))
