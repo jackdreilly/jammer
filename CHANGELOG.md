@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.9 (2021-10-11)
+### Fix
+* Isort lint ([`5dd8ea1`](https://github.com/jackdreilly/jammer/commit/5dd8ea1959f9853cd1a70b902585b5bf8cde5577))
+
 ## v0.2.8 (2021-10-11)
 ### Fix
 * Region ([`cafc847`](https://github.com/jackdreilly/jammer/commit/cafc84777eb76d832cbabd123e7277e4345a8093))

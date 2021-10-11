@@ -29,7 +29,7 @@ from midiutil.MidiFile import MIDIFile
 from pydantic import BaseModel
 from pydantic.types import conint, constr
 
-__version__ = "0.2.8"
+__version__ = "0.2.9"
 
 
 @unique
