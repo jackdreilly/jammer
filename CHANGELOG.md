@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.2.8 (2021-10-11)
+### Fix
+* Region ([`cafc847`](https://github.com/jackdreilly/jammer/commit/cafc84777eb76d832cbabd123e7277e4345a8093))
+
 ## v0.2.7 (2021-10-10)
 ### Fix
 * Test-midi ([`d48cb7e`](https://github.com/jackdreilly/jammer/commit/d48cb7efb985e133208f67342b0896a0f2ddd1d4))
