@@ -36,3 +36,4 @@ jobs:
         with:
           source: "."
           service: jammer
+          region: europe-west1
