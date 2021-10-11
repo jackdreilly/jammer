@@ -33,6 +33,8 @@ jobs:
         run: task black-lint
       - name: autoflake
         run: task autoflake-lint
+      - name: isort
+        run: task isort-lint
       - name: Pytest
         run: task test
       - name: "Upload coverage to Codecov"
