@@ -5,7 +5,7 @@ description = "Jamming tool"
 authors = ["Jack Reilly <jackdreilly@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 MIDIUtil = "^1.2.1"
 pydantic = "^1.8.2"
 fastapi = "^0.70.0"
