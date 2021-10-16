@@ -5,6 +5,12 @@ dotenv:
 tasks:
   gband: open test.midi
   midi: timidity test.midi
+  test: poetry run pytest {{.update_goldens}} -vvv -s --cov jet_jammer --cov-report=xml --junit-xml report_unit.xml --cov-report html:.cov_html --cov-fail-under 99 {{.CLI_ARGS}}
+  update-goldens:
+    cmds:
+      - task: test
+        vars:
+          update_goldens: --update-goldens
   fmt:
     cmds:
       - task: isort
