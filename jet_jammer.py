@@ -441,8 +441,16 @@ class ChordDurationChord(ChordDuration):
 
 
 @dataclass(frozen=True)
-class BuilderValue:
+class BuilderValue(BuildValueMixin):
     value: BuilderValueType
+    advances_time: bool = True
+
+    def using(self, advances_time: bool = None) -> BuilderValue:
+        return (
+            self
+            if advances_time is None or self.advances_time is advances_time
+            else BuilderValue(self.value, advances_time)
+        )
 
     @property
     def chord_durations(self) -> Generator[ChordDuration, None, None]:
@@ -454,18 +462,23 @@ class BuilderValue:
             yield ChordDuration.rest(self.value.duration)
         if isinstance(self.value, Measure):
             yield ChordDuration.measure(self.value)
-        if isinstance(self.value, BuilderValueSequence):
-            for value in self.value.sequence:
-                yield from BuilderValue.make(value).chord_durations
 
     @classmethod
-    def make(cls, value: Union[BuilderValue, BuilderValueType]) -> BuilderValue:
+    def make(
+        cls, value: Union[BuilderValue, BuilderValueType], advances_time: bool = None
+    ) -> BuilderValue:
         return (
-            value
+            value.using(advances_time=advances_time)
             if isinstance(value, BuilderValue)
-            else BuilderValue(BuilderValueSequence(list(value)))
+            else BuilderValue(
+                BuilderValueSequence(list(value)),
+                advances_time if advances_time is not None else True,
+            )
             if isinstance(value, Iterable)
-            else BuilderValue(value)
+            else BuilderValue(
+                value,
+                advances_time if advances_time is not None else True,
+            )
         )
 
 
@@ -480,12 +493,10 @@ class BuilderValueSequence:
         return BuilderValueSequence([*self.sequence, BuilderValue.make(value)])
 
     def __lshift__(self, value: BuilderValueType):
-        value: BuilderValue = BuilderValue.make(value)
-        sequence = self >> value
-        if isinstance(value.value, MidiChord):
-            if duration := value.value.duration:
-                return sequence >> -1 * duration
-        return sequence
+        return BuilderValue(self, False) >> BuilderValue.make(value)
+
+    def __iter__(self):
+        return iter(self.sequence)
 
     @classmethod
     def singleton(cls, builder_value: BuilderValue):
@@ -549,28 +560,32 @@ class MidiTrackPlayBuilder:
     def measure(self, measure: int) -> int:
         self.time = measure * self.measure_duration
 
-    @property
     @contextmanager
-    def reset_time(self):
+    def reset_time(self, builder_value: BuilderValue):
         original_time = self.time
         yield
-        self.time = original_time
+        if not builder_value.advances_time:
+            self.time = original_time
 
     def __lshift__(self, builder_value: BuilderValue) -> MidiTrackPlayBuilder:
-        builder_value = BuilderValue.make(builder_value)
-        with self.reset_time:
-            return self >> builder_value
+        return self >> BuilderValue.make(builder_value).using(advances_time=False)
 
     def __rshift__(
-        self, builder_value: Union[MidiChord, Measure, float]
+        self, builder_value_input: Union[MidiChord, Measure, float]
     ) -> MidiTrackPlayBuilder:
-        for chord_duration in BuilderValue.make(builder_value).chord_durations:
-            if chord := chord_duration.midi_chord:
-                self.midi_chords.append(chord.at(self.time))
-            self.time += (
-                chord_duration.get_duration(self.time, self.measure_duration) or 0
-            )
-        return self
+        builder_value = BuilderValue.make(builder_value_input)
+        with self.reset_time(builder_value):
+            if isinstance(builder_value.value, BuilderValueSequence):
+                for sequence_value in builder_value.value:
+                    self >>= sequence_value
+                return self
+            for chord_duration in builder_value.chord_durations:
+                if chord := chord_duration.midi_chord:
+                    self.midi_chords.append(chord.at(self.time))
+                self.time += (
+                    chord_duration.get_duration(self.time, self.measure_duration) or 0
+                )
+            return self
 
     @property
     def compiled(self) -> MidiTrackPlay:
@@ -637,8 +652,13 @@ def make_midi(
     for chord in chord_progression.chords:
         (
             drums
-            << (drummer.bass(2) << drummer.bass(2) << Rest(0))
-            << ((drummer.ride() >> drummer.ride(2 / 3) >> drummer.ride(1 / 3)) * 2)
+            << (
+                (
+                    drummer.bass(2)
+                    << ((drummer.ride() >> drummer.ride(2 / 3) >> drummer.ride(1 / 3)))
+                )
+                * 2
+            )
             >> Rest(2)
             >> (2 / 3)
             >> drummer.snare()
@@ -648,8 +668,7 @@ def make_midi(
             piano
             >> MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
             >> MidiChord(duration=1 / 6, pitches=list(chord.pitches))
-            >> 1 / 6
-            >> (1 * Measure() * 1)
+            >> Measure()
         )
         (bass >> (MidiChord.pitch(pitch - 2 * OCTAVE) for pitch in chord))
 

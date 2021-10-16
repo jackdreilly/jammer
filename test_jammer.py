@@ -15,6 +15,7 @@ from jet_jammer import (
     Chord,
     ChordProgression,
     Letter,
+    Measure,
     MidiChord,
     MidiTrack,
     MidiTrackPlayBuilder,
@@ -223,3 +224,8 @@ def test_builder_measure():
     builder.measure += 1
     assert builder.measure == 2
     assert builder.time == 8
+
+
+def test_measure_mult():
+    assert Measure(1) * 2 == Measure(2)
+    assert 2 * Measure(3) == Measure(6)
