@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.3 (2021-10-17)
+### Fix
+* Measures ([`75dff7c`](https://github.com/jackdreilly/jammer/commit/75dff7c79a0a2a45707114f6b8aa6d4c02311ba8))
+
 ## v0.3.2 (2021-10-17)
 ### Fix
 * B9 bug ([`0b00dfd`](https://github.com/jackdreilly/jammer/commit/0b00dfdb76eb1f2401f19d77b17e8238a8d8498e))
