@@ -12,7 +12,9 @@ fastapi = "^0.70.0"
 uvicorn = "^0.15.0"
 platformdirs = "^2.4.0"
 
+
 [tool.poetry.dev-dependencies]
+icecream = "^2.1.1"
 pytest = "^6.2.5"
 black = { version = "^21.9b0", allow-prereleases = true }
 pytest-cov = { version = "^3.0.0", allow-prereleases = true }
@@ -31,10 +33,7 @@ profile = "black"
 multi_line_output = 3
 
 [tool.semantic_release]
-version_variable = [
-    "jet_jammer.py:__version__",
-    "pyproject.toml:version"
-]
+version_variable = ["jet_jammer.py:__version__", "pyproject.toml:version"]
 branch = "main"
 upload_to_pypi = true
 upload_to_release = true

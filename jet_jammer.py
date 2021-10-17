@@ -7,29 +7,180 @@ import os
 import re
 import tempfile
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import _MISSING_TYPE, Field, asdict, dataclass, field, fields
 from enum import Enum, auto, unique
 from typing import (
+    Any,
     BinaryIO,
+    Dict,
     Generator,
     Iterable,
+    Iterator,
     List,
     Literal,
     Optional,
     Protocol,
+    Set,
     Union,
 )
 
 import fastapi
+from fastapi import HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.params import Depends, Query
 from fastapi.responses import FileResponse
 from midiutil.MidiFile import MIDIFile
 from pydantic import BaseModel
-from pydantic.types import conint, constr
+from pydantic.types import ConstrainedInt, conint, constr
 
 __version__ = "0.2.9"
+
+
+@dataclass(frozen=True)
+class DataclassFieldType:
+    type: Any
+
+    @classmethod
+    def make(cls, field_type: str):
+        if isinstance(field_type, str):
+            field_type = eval(field_type)
+        return cls(field_type)
+
+    @property
+    def is_list(self) -> bool:
+        return getattr(self.type, "_name", None) == "List"
+
+    @property
+    def is_literal(self) -> bool:
+        return getattr(self.type, "__origin__", None) is Literal
+
+    @property
+    def is_int(self) -> bool:
+        return isinstance(self.type, type) and issubclass(
+            self.type, (int, ConstrainedInt)
+        )
+
+    @property
+    def list_type(self) -> DataclassFieldType:
+        return self.make(self.type.__args__[0])
+
+    @property
+    def literal_value(self):
+        return self.type.__args__[0]
+
+    @property
+    def is_dataclass(self) -> bool:
+        return isinstance(self.type, type) and issubclass(
+            self.type, DataclassParserMixin
+        )
+
+
+@dataclass(frozen=True)
+class DataclassField:
+    dataclass_field: Field
+
+    @property
+    def type(self) -> DataclassFieldType:
+        return DataclassFieldType.make(self.dataclass_field.type)
+
+    @property
+    def name(self) -> str:
+        return self.dataclass_field.name
+
+    @property
+    def default(self):
+        # if self.type.is_literal:
+        #     return self.type.literal_value
+        return self.dataclass_field.default
+
+    @property
+    def has_default(self):
+        return not isinstance(self.default, _MISSING_TYPE)
+
+
+class DataclassParserMixin:
+    @dataclass
+    class ParserCounter:
+        count: int = 0
+
+        def pattern_name(self, name: str) -> int:
+            self.count += 1
+            return f"{name}{self.count}"
+
+        @property
+        def copied(self) -> DataclassParserMixin.ParserCounter:
+            return DataclassParserMixin.ParserCounter(self.count)
+
+    @classmethod
+    def pattern(cls, counter: ParserCounter = None, *_, **__) -> re.Pattern:
+        counter = counter or cls.ParserCounter()
+
+        def field_pattern(field_type: DataclassFieldType) -> re.Pattern:
+            if field_type.is_literal:
+                return re.compile(re.escape(field_type.literal_value))
+            if field_type.is_list:
+                return re.compile(f"({field_pattern(field_type.list_type).pattern})*")
+            if field_type.is_int:
+                return re.compile(r"\d*")
+            if field_type.is_dataclass:
+                return field_type.type.pattern(counter)
+            return field_type.type.pattern()
+
+        return re.compile(
+            "".join(
+                f"(?P<{counter.pattern_name(field_.name)}>{field_pattern(field_.type).pattern}){'?' if field_.has_default else ''}"
+                for field_ in map(DataclassField, fields(cls))
+            )
+        )
+
+    @classmethod
+    def parse(cls, string: str, counter: ParserCounter = None, *_, **__):
+        counter = counter or cls.ParserCounter()
+        outer_pattern = cls.pattern(counter.copied)
+        outer_match = outer_pattern.fullmatch(string)
+
+        def field_value(
+            field_name: str,
+            field_type: DataclassFieldType,
+            match: re.Match,
+            default_value=None,
+        ) -> re.Pattern:
+            if not match:
+                raise ValueError("No match")
+            pattern_name = counter.pattern_name(field_name)
+            value = match.groupdict().get(pattern_name)
+            if field_type.is_literal:
+                return field_type.literal_value
+            if field_type.is_list:
+                return [
+                    field_type.list_type.type.parse(list_match.group(0))
+                    for list_match in list(
+                        field_type.list_type.type.pattern(counter).finditer(value)
+                    )
+                    if list_match.group(0)
+                ]
+            if value is None:
+                return default_value
+            if field_type.is_int:
+                if not value:
+                    value = default_value
+                return int(value)
+            if field_type.is_dataclass:
+                return field_type.type.parse(value, counter)
+            return field_type.type.parse(value)
+
+        return cls(
+            **{
+                field_.name: field_value(
+                    field_.name,
+                    field_.type,
+                    outer_match,
+                    default_value=field_.default,
+                )
+                for field_ in map(DataclassField, fields(cls))
+            }
+        )
 
 
 @unique
@@ -40,24 +191,47 @@ class AutoEnum(str, Enum):
         return self
 
 
+class ParserMixin:
+    @classmethod
+    def string_mapping(cls) -> Dict:
+        return {k: record for record in cls for k in (record.name, record.name.lower())}
+
+    @classmethod
+    def pattern(cls) -> re.Pattern:
+        return re.compile("(" + "|".join(map(re.escape, cls.string_mapping())) + ")")
+
+    @classmethod
+    def parse(cls, string: str):
+        mapping = cls.string_mapping()
+        if value := mapping.get(string):
+            return value
+        raise ValueError(f"{string} not valid enum string for {cls} ({mapping})")
+
+
 @dataclass(frozen=True)
-class Octave:
-    count: int = 1
+class Octave(DataclassParserMixin):
+    octave_value: int = 4
 
-    def __mul__(self, i: int):
-        return Octave(self.count * i)
+    def __mul__(self, i: int) -> Octave:
+        return Octave(self.octave_value * i)
 
-    def __rmul__(self, i: int):
+    def __add__(self, i: int) -> Octave:
+        return Octave(self.octave_value + i)
+
+    def __sub__(self, i: int) -> Octave:
+        return self + (-i)
+
+    def __rmul__(self, i: int) -> Octave:
         return self * i
 
     def __int__(self) -> int:
-        return self.count * 12
+        return self.octave_value * 12
 
 
-OCTAVE = Octave()
+OCTAVE = Octave(1)
 
 
-class Letter(AutoEnum):
+class Letter(ParserMixin, AutoEnum):
     """Musical letter"""
 
     A = auto()
@@ -87,35 +261,55 @@ class Letter(AutoEnum):
         """Decrements letter"""
         return self + (-i)
 
+
+class AccidentalMixin(ParserMixin):
     @classmethod
-    def from_string(cls, string: str) -> Letter:
-        """Parses letter from string"""
-        return cls(string.upper())
+    def string_mapping(cls) -> Dict:
+        return {
+            "b": cls.flat,
+            "n": cls.natural,
+            "#": cls.sharp,
+            **{k.value: k for k in cls},
+        }
+
+    def __int__(self) -> int:
+        return list(type(self)).index(self) - 1
 
 
-class Accidental(AutoEnum):
+class RequiredAccidental(AccidentalMixin, AutoEnum):
     """Musical accidental"""
 
     flat = "♭"
     natural = "♮"
     sharp = "♯"
 
+    @property
+    def normed(self) -> Accidental:
+        return Accidental[self.name]
+
+
+class Accidental(AccidentalMixin, AutoEnum):
+    """Musical accidental w/ optional natural"""
+
+    flat = "♭"
+    natural = "♮"
+    sharp = "♯"
+
     @classmethod
-    def from_string(cls, string: str) -> Accidental:
-        """Parses accidental from string, supporting easy aliases"""
-        return cls(
-            {"b": cls.flat, "n": cls.natural, "#": cls.sharp, "": cls.natural}.get(
-                string, string
-            )
-        )
+    def string_mapping(cls) -> Dict:
+        return {
+            **{k: v.normed for k, v in RequiredAccidental.string_mapping().items()},
+            "": cls.natural,
+        }
 
 
 @dataclass(frozen=True)
-class NoteName:
+class NoteName(DataclassParserMixin):
     letter: Letter
-    accidental: Accidental
+    accidental: Accidental = Accidental.natural
 
-    regex = r"^(?P<letter>[a-zA-Z])(?P<accidental>[♮♭#bn♯]?)$"
+    def augmented(self, accidental: Accidental) -> NoteName:
+        return self + int(accidental)
 
     @property
     def is_natural(self) -> bool:
@@ -125,24 +319,75 @@ class NoteName:
     def is_flat(self) -> bool:
         return self.accidental == Accidental.flat
 
-    def __eq__(self, other: NoteName) -> bool:
-        def normalize(note_name: NoteName):
-            return (
-                note_name
-                if note_name.is_natural
-                else NoteName(
-                    note_name.letter - 1,
-                    Accidental.sharp
-                    if note_name.letter.has_flat
-                    else Accidental.natural,
-                )
-                if note_name.is_flat
-                else note_name
-                if note_name.letter.has_sharp
-                else NoteName(note_name.letter + 1, Accidental.natural)
-            )
+    @property
+    def is_sharp(self) -> bool:
+        return self.accidental == Accidental.sharp
 
-        return asdict(normalize(self)) == asdict(normalize(other))
+    @property
+    def next(self) -> NoteName:
+        if self.is_flat:
+            return self.naturalized
+        if self.is_natural and self.letter.has_sharp:
+            return self.sharped
+        return NoteName(
+            self.letter + 1,
+            Accidental.natural
+            if self.letter.has_sharp or self.is_natural
+            else Accidental.sharp,
+        )
+
+    @property
+    def naturalized(self) -> NoteName:
+        return NoteName(self.letter, Accidental.natural)
+
+    @property
+    def flattened(self) -> NoteName:
+        return NoteName(self.letter, Accidental.flat)
+
+    @property
+    def sharped(self) -> NoteName:
+        return NoteName(self.letter, Accidental.sharp)
+
+    @property
+    def previous(self) -> NoteName:
+        if self.is_sharp:
+            return self.naturalized
+        if self.is_natural and self.letter.has_flat:
+            return self.flattened
+        return NoteName(
+            self.letter - 1,
+            Accidental.natural
+            if self.letter.has_flat or self.is_natural
+            else Accidental.flat,
+        )
+
+    def __add__(self, steps: int) -> NoteName:
+        if not steps:
+            return self
+        if steps > 0:
+            return self.next + (steps - 1)
+        return self.previous + (steps + 1)
+
+    @property
+    def normed(self) -> NoteName:
+        return (
+            self
+            if self.is_natural
+            else NoteName(
+                self.letter - 1,
+                Accidental.sharp if self.letter.has_flat else Accidental.natural,
+            )
+            if self.is_flat
+            else self
+            if self.letter.has_sharp
+            else NoteName(self.letter + 1, Accidental.natural)
+        )
+
+    def __eq__(self, other: NoteName) -> bool:
+        return asdict(self.normed) == asdict(other.normed)
+
+    def __hash__(self) -> int:
+        return hash(str(self.normed))
 
     @classmethod
     def natural(cls, letter: Letter) -> NoteName:
@@ -167,18 +412,6 @@ class NoteName:
     def index(self) -> int:
         return list(self.iterator()).index(self)
 
-    @classmethod
-    def from_string(cls, note_name_string: str) -> NoteName:
-        match = re.match(cls.regex, note_name_string)
-        if not match:
-            raise ValueError(f'"{note_name_string}" not a NoteName')
-        return NoteName(
-            Letter.from_string(match.group("letter")),
-            Accidental.from_string(
-                match.group("accidental") or Accidental.natural.value
-            ),
-        )
-
 
 @dataclass(frozen=True)
 class Chord:
@@ -194,28 +427,26 @@ class Chord:
 
 
 @dataclass(frozen=True)
+class NoteNameOctave(DataclassParserMixin):
+    note_name: NoteName
+    octave: Octave
+
+
+@dataclass(frozen=True)
 class Pitch:
     midi_interval: int
 
     _A4_MIDI_INTERVAL = 57
     _A4_OCTAVE = 4
 
-    regex = re.compile(NoteName.regex[:-1] + r"(?P<octave>\d?)$")
+    @classmethod
+    def pattern(cls) -> re.Pattern:
+        return NoteNameOctave.pattern()
 
     @classmethod
-    def from_string(cls, pitch_string: str) -> Pitch:
-        match = cls.regex.match(pitch_string)
-        if not match:
-            raise ValueError(f'"{pitch_string}" not a Pitch')
-        return cls.from_note(
-            NoteName(
-                Letter.from_string(match.group("letter")),
-                Accidental.from_string(
-                    match.group("accidental") or Accidental.natural.value
-                ),
-            ),
-            int(match.group("octave") or 4),
-        )
+    def parse(cls, pitch_string: str, *args, **kwargs) -> Pitch:
+        parsed: NoteNameOctave = NoteNameOctave.parse(pitch_string, *args, **kwargs)
+        return cls.from_note(parsed.note_name, parsed.octave)
 
     def __add__(self, interval: int) -> Pitch:
         return Pitch(self.midi_interval + int(interval))
@@ -224,8 +455,11 @@ class Pitch:
         return self + (-1 * interval)
 
     @classmethod
-    def from_note(cls, note_name: NoteName, octave: int) -> Pitch:
-        return cls(cls._A4_MIDI_INTERVAL + (octave - 4) * 12 + note_name.index)
+    def from_note(cls, note_name: NoteName, octave: Octave) -> Pitch:
+        octave = octave if isinstance(octave, Octave) else Octave(octave)
+        return cls(
+            cls._A4_MIDI_INTERVAL + int(octave - cls._A4_OCTAVE) + note_name.index
+        )
 
     @property
     def a_offset(self) -> int:
@@ -243,6 +477,12 @@ class Pitch:
 @dataclass(frozen=True)
 class Scale:
     intervals: List[int]
+
+    def keyed(self, key: NoteName) -> KeyScale:
+        return KeyScale(key, self)
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.intervals)
 
     @classmethod
     def make(cls, *intervals: List[int]):
@@ -277,7 +517,13 @@ class Scale:
 class KeyScale:
     key: NoteName
     scale: Scale
-    octave: int = 4
+
+    def __getitem__(self, interval: int) -> NoteName:
+        return next(itertools.islice(self, interval - 1, None))
+
+    def __iter__(self) -> Iterator[NoteName]:
+        for interval in self.scale:
+            yield self.key + interval
 
 
 @dataclass(frozen=True)
@@ -303,7 +549,7 @@ ChordNumber = conint(ge=1, le=7)
 @dataclass(frozen=True)
 class ChordProgression:
     chord_numbers: List[ChordNumber]
-    key: Pitch = Pitch.from_string("c")
+    key: Pitch = Pitch.parse("c")
     scale: Scale = major
 
     @property
@@ -670,7 +916,13 @@ def make_midi(
             >> MidiChord(duration=1 / 6, pitches=list(chord.pitches))
             >> Measure()
         )
-        (bass >> (MidiChord.pitch(pitch - 2 * OCTAVE) for pitch in chord))
+        (
+            bass
+            >> (
+                MidiChord.pitch(pitch - 2 * OCTAVE)
+                for pitch in itertools.islice(itertools.cycle(chord), 4)
+            )
+        )
 
     MidiSong(
         tracks=[track.compiled for track in [piano, bass, drums]], tempo=tempo
@@ -682,7 +934,7 @@ app = fastapi.FastAPI()
 
 class ChordProgressionModel(BaseModel):
     chord_numbers: List[ChordNumber]
-    key: constr(regex=Pitch.regex.pattern)
+    key: constr(regex=Pitch.pattern().pattern)
     scale: Literal["major"] = "major"
 
     class Config(BaseModel.Config):
@@ -710,18 +962,176 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware)
 
 
+class ChordType(ParserMixin, Enum):
+    diminished = [0, 3, 6, 9]
+    diminished_seventh = [*diminished, 10]
+    augmented = [0, 4, 8]
+    augmented_seventh = [*augmented, 10]
+    suspended = [0, 5, 7]
+    suspended_two = [0, 2, 7]
+    major = [0, 4, 7]
+    two = sorted({*major, 2})
+    minor = [0, 3, 7]
+    dominant = [*major, 10]
+    minor_seventh = [*minor, 10]
+    major_seventh = [*major, 11]
+    sixth = sorted({*major, 9})
+    minor_sixth = sorted({*minor, 9})
+    thirteenth = [*sixth, 10]
+    minor_thirteenth = [*minor_sixth, 10]
+    minor_two = sorted({*minor, 2})
+    major_two = sorted({*major, 2})
+    ninth = sorted({*major_two, 10})
+    minor_ninth = sorted({*minor_two, 10})
+
+    @classmethod
+    def string_mapping(cls) -> Dict:
+        return {
+            "°": cls.diminished,
+            "ø": cls.diminished,
+            "ø7": cls.diminished_seventh,
+            "dim": cls.diminished,
+            "dim7": cls.diminished_seventh,
+            "+": cls.augmented,
+            "aug": cls.augmented,
+            "+7": cls.augmented_seventh,
+            "aug7": cls.augmented_seventh,
+            "7": cls.dominant,
+            "m": cls.minor,
+            "min": cls.minor,
+            "m7": cls.minor_seventh,
+            "min7": cls.minor_seventh,
+            "maj": cls.major,
+            "maj7": cls.major_seventh,
+            "": cls.major,
+            "sus": cls.suspended,
+            "sus2": cls.suspended_two,
+            "2": cls.two,
+            "9": cls.ninth,
+            "6": cls.sixth,
+            "13": cls.thirteenth,
+            "m6": cls.minor_sixth,
+            "min6": cls.minor_sixth,
+            "m2": cls.minor_two,
+            "min2": cls.minor_two,
+            "m9": cls.minor_ninth,
+            "min9": cls.minor_ninth,
+            "m13": cls.minor_thirteenth,
+            "min13": cls.minor_thirteenth,
+            "maj2": cls.major_two,
+        }
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.value)
+
+
+@dataclass(frozen=True)
+class ChordAccidental(DataclassParserMixin):
+    accidental_: RequiredAccidental
+    interval: ChordNumber
+
+    @property
+    def accidental(self) -> Accidental:
+        return self.accidental_.normed
+
+
+@dataclass(frozen=True)
+class BassNoteName(DataclassParserMixin):
+    slash: Literal["/"]
+    note_name: NoteName
+
+
+@dataclass(frozen=True)
+class ChordName(DataclassParserMixin):
+    root: NoteName
+    chord_type: ChordType
+    accidentals: List[ChordAccidental] = field(default_factory=list)
+    bass: BassNoteName = None
+
+    @property
+    def scale(self) -> KeyScale:
+        return major.keyed(self.root)
+
+    @property
+    def notes(self) -> Set[NoteName]:
+        return sorted(
+            {
+                *([self.bass.note_name] if self.bass else []),
+                *{
+                    self.scale[accidental.interval].augmented(accidental.accidental)
+                    for accidental in self.accidentals
+                },
+                *{self.root + step for step in self.chord_type},
+            },
+            key=lambda x: {self.bass and self.bass.note_name: 0, self.root: 1}.get(
+                x, 2
+            ),
+        )
+
+    @property
+    def midi_friendly(self) -> ChordNameMidiFriendly:
+        return ChordNameMidiFriendly(self)
+
+
+@dataclass(frozen=True)
+class ChordNameMidiFriendly:
+    chord: ChordName
+
+    @property
+    def pitches(self) -> Iterable[Pitch]:
+        for note in self.chord.notes:
+            yield Pitch.from_note(note, Octave(4))
+
+    def __iter__(self):
+        yield from self.pitches
+
+
+@dataclass(frozen=True)
+class ChordNameProgression:
+    chords_: List[ChordName]
+
+    @classmethod
+    def pattern(cls) -> re.Pattern:
+        parser_counter = ChordName.ParserCounter()
+        pattern_1 = ChordName.pattern(parser_counter)
+        pattern_2 = ChordName.pattern(parser_counter)
+        return re.compile(rf"{pattern_1.pattern}(\s+{pattern_2.pattern})*")
+
+    @classmethod
+    def parse(cls, chord_names_string: str) -> ChordNameProgression:
+        return cls(
+            list(
+                ChordName.parse(chord_name_string.strip())
+                for chord_name_string in chord_names_string.split(" ")
+            )
+        )
+
+    @property
+    def chords(self) -> Generator[ChordNameMidiFriendly, None, None]:
+        for chord in self.chords_:
+            yield chord.midi_friendly
+
+
 @app.get("/", response_class=FileResponse)
 def get_midi(
-    chord_numbers: List[ChordNumber] = Query([1, 6, 2, 5]),
-    key: constr(regex=Pitch.regex.pattern) = Query("C"),
+    chord_numbers: Optional[List[ChordNumber]] = Query(None),
+    chord_names: Optional[
+        constr(regex=f"^{ChordNameProgression.pattern().pattern}$")
+    ] = Query(None),
+    key: constr(regex=f"^{Pitch.pattern().pattern}$") = Query("C"),
     tempo: Tempo = 150,
     temp_file=Depends(create_temp_file),
 ):
+    if chord_numbers and chord_names:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot only supply one of chord_numbers or chord_names",
+        )
     file_object, path = temp_file
     make_midi(
-        chord_progression=ChordProgression(
-            chord_numbers, Pitch.from_string(key), major
-        ),
+        chord_progression=ChordProgression(chord_numbers, Pitch.parse(key), major)
+        if chord_numbers
+        else ChordNameProgression.parse(chord_names),
         file_object=file_object,
         tempo=tempo,
     )

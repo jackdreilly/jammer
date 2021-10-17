@@ -134,3 +134,4 @@ report_unit.xml
 .cov_html/
 .env
 test.midi
+chords.midi
