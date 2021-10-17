@@ -659,23 +659,31 @@ class ChordDuration(Protocol):
 
 
 @dataclass(frozen=True)
-class ChordDurationRest(ChordDuration):
+class ChordDurationRest:
     duration: float
 
     def get_duration(self, time: float, measure_duration: int) -> float:
         return self.duration
 
+    @property
+    def midi_chord(self) -> Optional[MidiChord]:
+        return None
+
 
 @dataclass(frozen=True)
-class ChordDurationMeasure(ChordDuration):
+class ChordDurationMeasure:
     measure: Measure
 
     def get_duration(self, time: float, measure_duration: int) -> float:
         return self.measure.duration(time, measure_duration)
 
+    @property
+    def midi_chord(self) -> Optional[MidiChord]:
+        return None
+
 
 @dataclass(frozen=True)
-class ChordDurationChord(ChordDuration):
+class ChordDurationChord:
     midi_chord_: MidiChord
 
     @property
