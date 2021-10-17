@@ -392,6 +392,13 @@ def test_chord_names_midi():
             ),
             file_object=fn,
         )
+    with open(Path(__file__).parent / "orn.midi", "wb") as fn:
+        make_midi(
+            chord_progression=ChordNameProgression.parse(
+                "Bb6 G7#5 | Cm7 F7 | Bbmaj7 Gm7 | Cm7 F7 | Fm7 Bb7 | Eb7 Ab7 | Dm7 G7b9 | Cm7 F7"  # noqa
+            ),
+            file_object=fn,
+        )
 
 
 @pytest.mark.parametrize(

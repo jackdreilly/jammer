@@ -531,6 +531,7 @@ class KeyChord:
     key: NoteName
     chord: Chord
     octave: int = 4
+    duration: int = 4
 
     @property
     def pitches(self) -> Generator[Pitch, None, None]:
@@ -911,24 +912,27 @@ def make_midi(
                     drummer.bass(2)
                     << ((drummer.ride() >> drummer.ride(2 / 3) >> drummer.ride(1 / 3)))
                 )
-                * 2
+                * int(chord.duration // 2)
             )
-            >> Rest(2)
-            >> (2 / 3)
-            >> drummer.snare()
-            >> drummer.snare(1 / 3)
+            >> (
+                (Rest(2) >> (2 / 3) >> drummer.snare() >> drummer.snare(1 / 3))
+                if chord.duration == 4
+                else Rest(2)
+            )
         )
         (
             piano
             >> MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
             >> MidiChord(duration=1 / 6, pitches=list(chord.pitches))
-            >> Measure()
+            >> (Measure() if chord.duration == 4 else Rest(1 / 6))
         )
         (
             bass
             >> (
                 MidiChord.pitch(pitch - 2 * OCTAVE)
-                for pitch in itertools.islice(itertools.cycle(chord), 4)
+                for pitch in itertools.islice(
+                    itertools.cycle(chord), int(chord.duration)
+                )
             )
         )
 
@@ -1076,14 +1080,14 @@ class ChordName(DataclassParserMixin):
             ),
         )
 
-    @property
-    def midi_friendly(self) -> ChordNameMidiFriendly:
-        return ChordNameMidiFriendly(self)
+    def midi_friendly(self, duration: int) -> ChordNameMidiFriendly:
+        return ChordNameMidiFriendly(self, duration)
 
 
 @dataclass(frozen=True)
 class ChordNameMidiFriendly:
     chord: ChordName
+    duration: float
 
     @property
     def pitches(self) -> Iterable[Pitch]:
@@ -1096,28 +1100,36 @@ class ChordNameMidiFriendly:
 
 @dataclass(frozen=True)
 class ChordNameProgression:
-    chords_: List[ChordName]
+    chords_: List[List[ChordName]]
 
     @classmethod
     def pattern(cls) -> re.Pattern:
         parser_counter = ChordName.ParserCounter()
         pattern_1 = ChordName.pattern(parser_counter)
         pattern_2 = ChordName.pattern(parser_counter)
-        return re.compile(rf"{pattern_1.pattern}(\s+{pattern_2.pattern})*")
+        return re.compile(rf"{pattern_1.pattern}(\s*(\||{pattern_2.pattern}))*")
 
     @classmethod
     def parse(cls, chord_names_string: str) -> ChordNameProgression:
-        return cls(
-            list(
+        measures = [
+            [
                 ChordName.parse(chord_name_string.strip())
-                for chord_name_string in chord_names_string.split(" ")
-            )
-        )
+                for chord_name_string in measure.split(" ")
+                if chord_name_string
+            ]
+            for measure in chord_names_string.split("|")
+            if measure
+        ]
+        if "|" not in chord_names_string:
+            return cls([[chord] for measure in measures for chord in measure])
+        return cls(measures)
 
     @property
     def chords(self) -> Generator[ChordNameMidiFriendly, None, None]:
-        for chord in self.chords_:
-            yield chord.midi_friendly
+        for measure in self.chords_:
+            duration = 4 / len(measure)
+            for chord in measure:
+                yield chord.midi_friendly(duration)
 
 
 @app.get("/", response_class=FileResponse)
