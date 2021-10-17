@@ -2,6 +2,14 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.0 (2021-10-17)
+### Feature
+* Chord-names ([`6972d46`](https://github.com/jackdreilly/jammer/commit/6972d4615f7217fdabbf5b6f12940e9481478e06))
+* Timidity ([`ca00e39`](https://github.com/jackdreilly/jammer/commit/ca00e39ad95183dbbf6a5d6ecb2a7f4d9c8d5108))
+
+### Fix
+* Advance_time ([`2e1d1ef`](https://github.com/jackdreilly/jammer/commit/2e1d1ef3a074e476a85e5ae125420ddb0320e9b2))
+
 ## v0.2.9 (2021-10-11)
 ### Fix
 * Isort lint ([`5dd8ea1`](https://github.com/jackdreilly/jammer/commit/5dd8ea1959f9853cd1a70b902585b5bf8cde5577))
