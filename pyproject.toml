@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jet_jammer"
-version = "0.3.0"
+version = "0.3.1"
 description = "Jamming tool"
 authors = ["Jack Reilly <jackdreilly@gmail.com>"]
 

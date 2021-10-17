@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.1 (2021-10-17)
+### Fix
+* Protocol crap ([`6d194cf`](https://github.com/jackdreilly/jammer/commit/6d194cfcfb977c796998a6c1ffec6d40bfca761e))
+
 ## v0.3.0 (2021-10-17)
 ### Feature
 * Chord-names ([`6972d46`](https://github.com/jackdreilly/jammer/commit/6972d4615f7217fdabbf5b6f12940e9481478e06))
