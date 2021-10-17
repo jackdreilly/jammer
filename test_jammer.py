@@ -296,6 +296,7 @@ def test_parse_chord_name_notes(chord_name_string: str, notes: Set[NoteName]):
         ("Ddim", {"d", "f", "ab", "b"}),
         ("Ddim/G", {"d", "f", "ab", "b", "g"}),
         ("Ddimn7/G", {"d", "f", "ab", "b", "g", "c#"}),
+        ("G7b9", {"g", "b", "d", "f", "ab"}),
     ),
 )
 def test_parse_chord_name_as_notes(chord_name_string: str, note_strings: Set[str]):

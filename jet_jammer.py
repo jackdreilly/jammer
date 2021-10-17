@@ -519,7 +519,7 @@ class KeyScale:
     scale: Scale
 
     def __getitem__(self, interval: int) -> NoteName:
-        return next(itertools.islice(self, interval - 1, None))
+        return next(itertools.islice(itertools.cycle(self), interval - 1, None))
 
     def __iter__(self) -> Iterator[NoteName]:
         for interval in self.scale:
