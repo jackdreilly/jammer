@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.3.2 (2021-10-17)
+### Fix
+* B9 bug ([`0b00dfd`](https://github.com/jackdreilly/jammer/commit/0b00dfdb76eb1f2401f19d77b17e8238a8d8498e))
+
 ## v0.3.1 (2021-10-17)
 ### Fix
 * Protocol crap ([`6d194cf`](https://github.com/jackdreilly/jammer/commit/6d194cfcfb977c796998a6c1ffec6d40bfca761e))
