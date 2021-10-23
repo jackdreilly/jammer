@@ -21,6 +21,7 @@ from typing import (
     Optional,
     Protocol,
     Set,
+    Tuple,
     Union,
 )
 
@@ -31,7 +32,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.params import Depends, Query
 from fastapi.responses import FileResponse
 from midiutil.MidiFile import MIDIFile
-from pydantic import BaseModel
+from pydantic.main import BaseModel
 from pydantic.types import ConstrainedInt, conint, constr
 
 __version__ = "0.3.3"
@@ -422,8 +423,8 @@ class Chord:
     def intervals(self) -> List[int]:
         return [self.root, *self.harmonics]
 
-    def pitched(self, pitch: Pitch) -> KeyChord:
-        return KeyChord(pitch.note_name, self, pitch.octave)
+    def pitched(self, pitch: Pitch, duration: float = None) -> KeyChord:
+        return KeyChord(pitch.note_name, self, pitch.octave, duration=duration or 4)
 
 
 @dataclass(frozen=True)
@@ -472,6 +473,9 @@ class Pitch:
     @property
     def octave(self) -> int:
         return (self.midi_interval - self._A4_MIDI_INTERVAL) // 12 + self._A4_OCTAVE
+
+    def midichord(self, duration: float = 1) -> MidiChord:
+        return MidiChord(duration, [self])
 
 
 @dataclass(frozen=True)
@@ -526,8 +530,21 @@ class KeyScale:
             yield self.key + interval
 
 
+class MidiFriendlyMixin:
+    @property
+    def midichord(self) -> MidiChord:
+        return MidiChord(self.duration, list(self.pitches))
+
+    @property
+    def root(self) -> Pitch:
+        return next(self.pitches)
+
+    def __iter__(self) -> Generator[Pitch, None, None]:
+        return self.pitches
+
+
 @dataclass(frozen=True)
-class KeyChord:
+class KeyChord(MidiFriendlyMixin):
     key: NoteName
     chord: Chord
     octave: int = 4
@@ -537,9 +554,6 @@ class KeyChord:
     def pitches(self) -> Generator[Pitch, None, None]:
         for interval in self.chord.intervals:
             yield Pitch.from_note(self.key, self.octave) + interval
-
-    def __iter__(self) -> Generator[Pitch, None, None]:
-        return self.pitches
 
 
 major = Scale.make(2, 4, 5, 7, 9, 11)
@@ -552,11 +566,15 @@ class ChordProgression:
     chord_numbers: List[ChordNumber]
     key: Pitch = Pitch.parse("c")
     scale: Scale = major
+    durations: List[float] = None
 
     @property
     def chords(self) -> Iterable[KeyChord]:
-        for chord_number in self.chord_numbers:
-            yield self.scale.seventh(chord_number).pitched(self.key)
+        for chord_number, duration in zip(
+            self.chord_numbers,
+            self.durations or (4 for _ in range(len(self.chord_numbers))),
+        ):
+            yield self.scale.seventh(chord_number).pitched(self.key, duration)
 
 
 class MidiInstrument(Enum):
@@ -564,6 +582,8 @@ class MidiInstrument(Enum):
 
     piano = 0
     bass = 32
+    orchestral = 116
+    guitar = 25
 
 
 class MidiDrum(Enum):
@@ -572,6 +592,7 @@ class MidiDrum(Enum):
     bass = 35
     snare = 38
     ride = 51
+    block = Pitch.from_note(NoteName.parse("D"), OCTAVE * 4).midi_interval
 
     @property
     def chord(self) -> List[Pitch]:
@@ -796,6 +817,9 @@ class Drummer:
     def snare(self, duration: float = 1) -> MidiChord:
         return MidiChord(duration, MidiDrum.snare.chord)
 
+    def block(self, duration: float = 1) -> MidiChord:
+        return MidiChord(duration, MidiDrum.block.chord)
+
 
 drummer = Drummer()
 
@@ -891,22 +915,76 @@ class MidiSong:
 Tempo = conint(ge=60, le=300)
 
 
-def make_midi(
-    *, chord_progression: ChordProgression, tempo: int = 120, file_object: BinaryIO
-):
-    piano = MidiTrackPlayBuilder(
-        midi_track=MidiTrack(name="Piano", instrument=MidiInstrument.piano)
+_style_registry = {}
+
+
+class SongStyle(AutoEnum):
+    jazz = auto()
+    bossa_nova = auto()
+    virtual_insanity = auto()
+    rock = auto()
+
+    @classmethod
+    def register(cls, style: SongStyle):
+        def helper(fn):
+            _style_registry[style] = fn
+            return fn
+
+        return helper
+
+    def song(
+        self, *, chord_progression: ChordProgression, tempo: int = 120
+    ) -> MidiSong:
+        return _style_registry[self](chord_progression=chord_progression, tempo=tempo)
+
+
+@dataclass(frozen=True)
+class ThreeTrackBuilder:
+    tempo: int = 120
+    piano: MidiTrackPlayBuilder = field(
+        default_factory=lambda: MidiTrackPlayBuilder(
+            midi_track=MidiTrack(name="Piano", instrument=MidiInstrument.piano)
+        )
     )
-    bass = MidiTrackPlayBuilder(
-        midi_track=MidiTrack(name="Bass", instrument=MidiInstrument.bass)
+    guitar: MidiTrackPlayBuilder = field(
+        default_factory=lambda: MidiTrackPlayBuilder(
+            midi_track=MidiTrack(name="Guitar", instrument=MidiInstrument.guitar)
+        )
     )
-    drums = MidiTrackPlayBuilder(
-        midi_track=MidiTrack(name="Drums", channel=MidiChannel.drum.value)
+    bass: MidiTrackPlayBuilder = field(
+        default_factory=lambda: MidiTrackPlayBuilder(
+            midi_track=MidiTrack(name="Bass", instrument=MidiInstrument.bass)
+        )
     )
+    drums: MidiTrackPlayBuilder = field(
+        default_factory=lambda: MidiTrackPlayBuilder(
+            midi_track=MidiTrack(name="Drums", channel=MidiChannel.drum.value)
+        )
+    )
+    percussion: MidiTrackPlayBuilder = field(
+        default_factory=lambda: MidiTrackPlayBuilder(
+            midi_track=MidiTrack(
+                name="Percussion", instrument=MidiInstrument.orchestral
+            )
+        )
+    )
+
+    @property
+    def song(self) -> MidiSong:
+        return MidiSong([track.compiled for track in self.tracks], self.tempo)
+
+    @property
+    def tracks(self) -> List[MidiTrackPlayBuilder]:
+        return [self.piano, self.bass, self.drums, self.percussion, self.guitar]
+
+
+@SongStyle.register(SongStyle.jazz)
+def jazz_song(chord_progression: ChordProgression, tempo: int = 120) -> MidiSong:
+    builder = ThreeTrackBuilder(tempo)
 
     for chord in chord_progression.chords:
         (
-            drums
+            builder.drums
             << (
                 (
                     drummer.bass(2)
@@ -921,13 +999,13 @@ def make_midi(
             )
         )
         (
-            piano
+            builder.piano
             >> MidiChord(duration=1 + 2 / 3, pitches=list(chord.pitches))
             >> MidiChord(duration=1 / 6, pitches=list(chord.pitches))
             >> (Measure() if chord.duration == 4 else Rest(1 / 6))
         )
         (
-            bass
+            builder.bass
             >> (
                 MidiChord.pitch(pitch - 2 * OCTAVE)
                 for pitch in itertools.islice(
@@ -935,10 +1013,94 @@ def make_midi(
                 )
             )
         )
+    return builder.song
 
-    MidiSong(
-        tracks=[track.compiled for track in [piano, bass, drums]], tempo=tempo
-    ).write_to(file_object)
+
+@SongStyle.register(SongStyle.bossa_nova)
+def bossa_song(chord_progression: ChordProgression, tempo: int = 120) -> MidiSong:
+    builder = ThreeTrackBuilder(tempo)
+
+    for chord in chord_progression.chords:
+        builder.guitar >> chord.midichord
+        bass_root: Pitch = chord.root - OCTAVE * 3
+        bass_fifth = bass_root + 5
+        (
+            builder.drums
+            << (drummer.ride() for _ in range(int(chord.duration)))
+            >> drummer.bass(chord.duration)
+        )
+        if chord.duration == 2:
+            builder.percussion >> Rest(1) >> drummer.block()
+            builder.bass >> bass_root.midichord(1.5) >> bass_fifth.midichord(0.5)
+        else:
+            builder.percussion >> Rest(1) >> (drummer.block(1.5) for _ in range(2))
+            (
+                builder.bass
+                >> bass_root.midichord(1.5)
+                >> bass_fifth.midichord(0.5)
+                >> bass_fifth.midichord(1.5)
+                >> bass_root.midichord(0.5)
+            )
+
+    return builder.song
+
+
+@SongStyle.register(SongStyle.rock)
+def rock_song(chord_progression: ChordProgression, tempo: int = 120) -> MidiSong:
+    builder = ThreeTrackBuilder(tempo)
+
+    for chord in chord_progression.chords:
+        for _ in range(int(chord.duration / 2)):
+            (
+                builder.drums
+                << (drummer.bass() << (Rest(1) >> drummer.snare()))
+                >> (drummer.ride(0.5) for _ in range(4))
+            )
+        builder.guitar >> chord.midichord
+        builder.piano >> chord.midichord
+        builder.bass >> (
+            (chord.root - OCTAVE * 3).midichord() for _ in range(int(chord.duration))
+        )
+
+    return builder.song
+
+
+@SongStyle.register(SongStyle.virtual_insanity)
+def virtual_insanity_song(
+    chord_progression: ChordProgression, tempo: int = 120
+) -> MidiSong:
+    builder = ThreeTrackBuilder(tempo)
+
+    for chord in chord_progression.chords:
+        bass_root: Pitch = chord.root - OCTAVE * 3
+        bass_fifth = bass_root + 5
+        for _ in range(int(chord.duration / 2)):
+            (
+                builder.drums
+                << (drummer.bass() << (Rest(1) >> drummer.snare()))
+                >> (drummer.ride(1 / 2) >> drummer.ride(1 / 3) >> drummer.ride(1 / 6))
+                >> (drummer.ride(1 / 2) >> drummer.ride(1 / 3) >> drummer.ride(1 / 6))
+            )
+        builder.guitar >> chord.midichord
+        builder.piano >> chord.midichord
+        (
+            builder.bass
+            >> bass_fifth.midichord(1 / 3)
+            >> bass_root.midichord(chord.duration - 1 / 2)
+            >> bass_fifth.midichord(1 / 6)
+        )
+
+    return builder.song
+
+
+def make_midi(
+    *,
+    chord_progression: ChordProgression,
+    tempo: int = 120,
+    file_object: BinaryIO,
+    style: SongStyle = SongStyle.jazz,
+) -> MidiSong:
+    style.song(chord_progression=chord_progression, tempo=tempo).write_to(file_object)
 
 
 app = fastapi.FastAPI()
@@ -1085,7 +1247,7 @@ class ChordName(DataclassParserMixin):
 
 
 @dataclass(frozen=True)
-class ChordNameMidiFriendly:
+class ChordNameMidiFriendly(MidiFriendlyMixin):
     chord: ChordName
     duration: float
 
@@ -1093,9 +1255,6 @@ class ChordNameMidiFriendly:
     def pitches(self) -> Iterable[Pitch]:
         for note in self.chord.notes:
             yield Pitch.from_note(note, Octave(4))
-
-    def __iter__(self):
-        yield from self.pitches
 
 
 @dataclass(frozen=True)
@@ -1132,14 +1291,35 @@ class ChordNameProgression:
                 yield chord.midi_friendly(duration)
 
 
+class ChordNumberProgression:
+    @classmethod
+    def pattern(cls) -> re.Pattern:
+        return re.compile(r"^[1-7](\s+(\||[1-7]))*$")
+
+    @classmethod
+    def parse(cls, string: str) -> Iterable[Tuple[ChordNumber, float]]:
+        if "|" not in string:
+            for note in string.split(" "):
+                if note.strip():
+                    yield int(note), 4
+        for measure in string.split("|"):
+            notes = list(map(int, filter(lambda x: x, measure.split(" "))))
+            duration = 4 // len(notes)
+            for note in notes:
+                yield note, duration
+
+
 @app.get("/", response_class=FileResponse)
 def get_midi(
-    chord_numbers: Optional[List[ChordNumber]] = Query(None),
+    chord_numbers: Optional[
+        constr(regex=f"^{ChordNumberProgression.pattern().pattern}$")
+    ] = Query(None),
     chord_names: Optional[
         constr(regex=f"^{ChordNameProgression.pattern().pattern}$")
     ] = Query(None),
     key: constr(regex=f"^{Pitch.pattern().pattern}$") = Query("C"),
     tempo: Tempo = 150,
+    style: SongStyle = SongStyle.jazz,
     temp_file=Depends(create_temp_file),
 ):
     if chord_numbers and chord_names:
@@ -1148,12 +1328,18 @@ def get_midi(
             "Cannot only supply one of chord_numbers or chord_names",
         )
     file_object, path = temp_file
+    if chord_numbers:
+        numbers, durations = zip(*ChordNumberProgression.parse(chord_numbers))
+        chord_progression = ChordProgression(
+            numbers, Pitch.parse(key), major, durations
+        )
+    else:
+        chord_progression = ChordNameProgression.parse(chord_names)
     make_midi(
-        chord_progression=ChordProgression(chord_numbers, Pitch.parse(key), major)
-        if chord_numbers
-        else ChordNameProgression.parse(chord_names),
+        chord_progression=chord_progression,
         file_object=file_object,
         tempo=tempo,
+        style=style,
     )
     file_object.flush()
     return FileResponse(path, filename="jammer.midi")

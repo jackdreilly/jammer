@@ -1,5 +1,4 @@
 """Test cases"""
-import io
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +25,7 @@ from jet_jammer import (
     NoteName,
     Octave,
     Pitch,
+    SongStyle,
     app,
     major,
     make_midi,
@@ -153,16 +153,6 @@ def test_note_name_a_offset(offset: int):
     assert NoteName.from_a_offset(offset) == list(NoteName.iterator())[offset]
 
 
-@pytest.mark.golden_test("goldens/*.yml")
-def test_golden(golden):
-    with io.BytesIO() as file_object:
-        make_midi(
-            chord_progression=ChordProgression([*range(1, 9), *range(8, 0, -1)]),
-            file_object=file_object,
-        )
-        assert file_object.getvalue() == golden.out["output"]
-
-
 def test_midi():
     with open(Path(__file__).parent / "test.midi", "wb") as fn:
         make_midi(
@@ -183,23 +173,11 @@ def test_parse_fail_pitch(string):
         Pitch.parse(string)
 
 
-def test_fast_api():
-    with io.BytesIO() as file_object:
-        make_midi(
-            chord_progression=ChordProgression([1, 3], Pitch.parse("D#")),
-            file_object=file_object,
-            tempo=195,
-        )
-        in_memory_content = file_object.getvalue()
-        assert in_memory_content
+@pytest.mark.golden_test("goldens/*.yml")
+def test_fast_api(golden):
     response = TestClient(app).get(
         "/",
-        params=[
-            ["chord_numbers", 1],
-            ["chord_numbers", 3],
-            ["key", "D#"],
-            ["tempo", 195],
-        ],
+        params=[[k, v] for k, v in golden["input"].items()],
     )
     assert response.headers == dict_has(
         **{
@@ -207,19 +185,10 @@ def test_fast_api():
             "content-disposition": 'attachment; filename="jammer.midi"',
         }
     )
-    assert response.content == in_memory_content
-    assert (
-        TestClient(app)
-        .get(
-            "/",
-            params=[
-                ["chord_names", "A A C D"],
-                ["tempo", 195],
-            ],
-        )
-        .status_code
-        == 200
-    )
+    assert response.content == golden.out["output"]
+
+
+def test_fast_api_fail():
     assert (
         TestClient(app)
         .get(
@@ -391,6 +360,7 @@ def test_chord_names_midi():
                 + "fmaj7 fmaj7 g13 g13 gm7 f#7b5 fmaj7 f#7b5"
             ),
             file_object=fn,
+            style=SongStyle.bossa_nova,
         )
     with open(Path(__file__).parent / "orn.midi", "wb") as fn:
         make_midi(
