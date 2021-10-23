@@ -35,7 +35,7 @@ from midiutil.MidiFile import MIDIFile
 from pydantic.main import BaseModel
 from pydantic.types import ConstrainedInt, conint, constr
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 
 
 @dataclass(frozen=True)

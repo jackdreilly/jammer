@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v0.4.0 (2021-10-23)
+### Feature
+* Styles ([`320433c`](https://github.com/jackdreilly/jammer/commit/320433c1dd047f39bc32b359b46194e4f551ebeb))
+
 ## v0.3.3 (2021-10-17)
 ### Fix
 * Measures ([`75dff7c`](https://github.com/jackdreilly/jammer/commit/75dff7c79a0a2a45707114f6b8aa6d4c02311ba8))
