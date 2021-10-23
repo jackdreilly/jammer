@@ -2,6 +2,9 @@
 
 <!--next-version-placeholder-->
 
+## v0.5.0 (2021-10-23)
+
+
 ## v0.4.0 (2021-10-23)
 ### Feature
 * Styles ([`320433c`](https://github.com/jackdreilly/jammer/commit/320433c1dd047f39bc32b359b46194e4f551ebeb))
